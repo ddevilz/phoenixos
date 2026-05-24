@@ -2,22 +2,22 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from core.api.webhooks import router as webhooks_router
+from core.db.neo4j import close_driver, init_driver, init_schema
+from core.db.sqlite import init_db
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # T08: call core.db.neo4j.init_driver() here
+    await init_db()
+    await init_driver()
+    await init_schema()
     yield
-    # T08: call core.db.neo4j.close_driver() here
+    await close_driver()
 
 
 app = FastAPI(title="PhoenixOS", lifespan=lifespan)
-
-# Router stubs — uncommented as T04, T09, T16, T23 land
-# from core.api import webhooks, graph, evals, ws
-# app.include_router(webhooks.router)
-# app.include_router(graph.router)
-# app.include_router(evals.router)
-# app.include_router(ws.router)
+app.include_router(webhooks_router)
 
 
 @app.get("/health")
