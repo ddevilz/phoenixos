@@ -44,6 +44,7 @@ async def _run_pipeline(event: FailureEvent) -> None:
     from core.db.neo4j import neo4j_session
     from core.embeddings.dedup import dedup
     from core.embeddings.pipeline import embed
+    from core.graph.scoring import recompute_fragility
     from core.graph.writer import write
     from core.ingestor.signature import extract
 
@@ -56,6 +57,7 @@ async def _run_pipeline(event: FailureEvent) -> None:
     async with neo4j_session() as session:
         result = await dedup(signature, session)
         await write(signature, result, session)
+        await recompute_fragility(session)
 
     logger.info(
         "signature=%s category=%s embedding_dim=%d dedup=%s matched=%s run=%s",

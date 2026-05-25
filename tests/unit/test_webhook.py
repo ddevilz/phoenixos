@@ -178,6 +178,7 @@ async def test_run_pipeline_calls_embed_after_extract() -> None:
         patch("core.embeddings.dedup.dedup", new_callable=AsyncMock, return_value=dedup_result),
         patch("core.db.neo4j.neo4j_session", return_value=mock_ctx),
         patch("core.graph.writer.write", new_callable=AsyncMock),
+        patch("core.graph.scoring.recompute_fragility", new_callable=AsyncMock),
     ):
         await _run_pipeline(event)
 
@@ -224,6 +225,7 @@ async def test_run_pipeline_calls_dedup_after_embed() -> None:
         ) as mock_dedup,
         patch("core.db.neo4j.neo4j_session", return_value=mock_ctx),
         patch("core.graph.writer.write", new_callable=AsyncMock),
+        patch("core.graph.scoring.recompute_fragility", new_callable=AsyncMock),
     ):
         await _run_pipeline(event)
 
@@ -269,6 +271,7 @@ async def test_run_pipeline_calls_write_after_dedup() -> None:
         patch(
             "core.graph.writer.write", new_callable=AsyncMock
         ) as mock_write,
+        patch("core.graph.scoring.recompute_fragility", new_callable=AsyncMock),
     ):
         await _run_pipeline(event)
 
@@ -294,9 +297,59 @@ async def test_run_pipeline_returns_early_when_extract_returns_none() -> None:
         patch("core.embeddings.pipeline.embed", new_callable=AsyncMock) as mock_embed,
         patch("core.embeddings.dedup.dedup", new_callable=AsyncMock) as mock_dedup,
         patch("core.graph.writer.write", new_callable=AsyncMock) as mock_write,
+        patch(
+            "core.graph.scoring.recompute_fragility", new_callable=AsyncMock
+        ) as mock_recompute,
     ):
         await _run_pipeline(event)
 
     mock_embed.assert_not_called()
     mock_dedup.assert_not_called()
     mock_write.assert_not_called()
+    mock_recompute.assert_not_called()
+
+
+async def test_run_pipeline_calls_recompute_after_write() -> None:
+    event = FailureEvent(
+        id="evt-1",
+        repo="owner/repo",
+        run_id="99",
+        workflow="CI",
+        job="CI",
+        step="unknown",
+        exit_code=1,
+        log_tail="",
+        changed_files=[],
+        timestamp=datetime(2026, 5, 25, 12, 0, 0, tzinfo=timezone.utc),
+    )
+    mock_sig = FailureSignature(
+        id="sig-1",
+        summary="test failure",
+        category="test_failure",
+        affected_component="src/foo.py",
+        embedding=[],
+        first_seen=datetime(2026, 5, 25, 12, 0, 0, tzinfo=timezone.utc),
+        last_seen=datetime(2026, 5, 25, 12, 0, 0, tzinfo=timezone.utc),
+        occurrence_count=1,
+    )
+    embedded_sig = mock_sig.model_copy(update={"embedding": [0.1] * 1536})
+    dedup_result = DedupResult(kind=DedupKind.NEW, matched_id=None, similarity=None)
+
+    mock_session = AsyncMock()
+    mock_ctx = MagicMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("core.ingestor.signature.extract", new_callable=AsyncMock, return_value=mock_sig),
+        patch("core.embeddings.pipeline.embed", new_callable=AsyncMock, return_value=embedded_sig),
+        patch("core.embeddings.dedup.dedup", new_callable=AsyncMock, return_value=dedup_result),
+        patch("core.db.neo4j.neo4j_session", return_value=mock_ctx),
+        patch("core.graph.writer.write", new_callable=AsyncMock),
+        patch(
+            "core.graph.scoring.recompute_fragility", new_callable=AsyncMock
+        ) as mock_recompute,
+    ):
+        await _run_pipeline(event)
+
+    mock_recompute.assert_called_once_with(mock_session)

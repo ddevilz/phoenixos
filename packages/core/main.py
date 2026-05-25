@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from core.api.graph import router as graph_router
 from core.api.webhooks import router as webhooks_router
 from core.db.neo4j import close_driver, init_driver, init_schema
 from core.db.sqlite import init_db
@@ -18,6 +19,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="PhoenixOS", lifespan=lifespan)
 app.include_router(webhooks_router)
+app.include_router(graph_router)
 
 
 @app.get("/health")
