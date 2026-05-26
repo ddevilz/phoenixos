@@ -102,3 +102,102 @@ async def test_get_fragility_returns_503_when_neo4j_unavailable(client) -> None:
         r = await client.get("/api/graph/fragility")
 
     assert r.status_code == 503
+
+
+async def test_get_genealogy_returns_chain(client) -> None:
+    expected = {
+        "fix_id": "fix-1",
+        "depth": 2,
+        "chain": [
+            {"id": "fix-1", "description": "latest patch", "author_type": "human",
+             "commit_sha": "abc1", "timestamp": "2026-01-01T00:00:00"},
+            {"id": "fix-2", "description": "earlier patch", "author_type": "ai",
+             "commit_sha": "abc2", "timestamp": "2025-12-01T00:00:00"},
+            {"id": "fix-3", "description": "root fix", "author_type": "human",
+             "commit_sha": "abc3", "timestamp": "2025-11-01T00:00:00"},
+        ],
+        "warning": None,
+    }
+    mock_ctx = MagicMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("core.db.neo4j.neo4j_session", return_value=mock_ctx),
+        patch(
+            "core.graph.genealogy.get_fix_genealogy",
+            new_callable=AsyncMock,
+            return_value=expected,
+        ),
+    ):
+        r = await client.get("/api/graph/genealogy/fix-1")
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["fix_id"] == "fix-1"
+    assert body["depth"] == 2
+    assert len(body["chain"]) == 3
+    assert body["warning"] is None
+
+
+async def test_post_predict_returns_predictions(client) -> None:
+    predictions = [
+        {
+            "id": "sig-1",
+            "summary": "ImportError in auth",
+            "category": "build_error",
+            "affected_component": "src/auth.py",
+            "fragility_score": 0.8,
+            "confidence": 0.8,
+            "match_type": "direct",
+        }
+    ]
+    mock_ctx = MagicMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("core.db.neo4j.neo4j_session", return_value=mock_ctx),
+        patch(
+            "core.agents.predictor.predict_failures",
+            new_callable=AsyncMock,
+            return_value=predictions,
+        ),
+    ):
+        r = await client.post("/api/graph/predict", json={"changed_files": ["src/auth.py"]})
+
+    assert r.status_code == 200
+    body = r.json()
+    assert isinstance(body, list)
+    assert len(body) == 1
+    assert body[0]["id"] == "sig-1"
+    assert body[0]["match_type"] == "direct"
+
+
+async def test_post_blast_radius_returns_at_risk(client) -> None:
+    expected = {
+        "at_risk": ["src/auth.py", "src/login.py"],
+        "fragility_scores": {"src/auth.py": 0.8, "src/login.py": 0.56},
+    }
+    mock_ctx = MagicMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("core.db.neo4j.neo4j_session", return_value=mock_ctx),
+        patch(
+            "core.graph.blast_radius.get_blast_radius",
+            new_callable=AsyncMock,
+            return_value=expected,
+        ),
+    ):
+        r = await client.post(
+            "/api/graph/blast-radius",
+            json={"changed_files": ["src/auth.py"]},
+        )
+
+    assert r.status_code == 200
+    body = r.json()
+    assert "at_risk" in body
+    assert "fragility_scores" in body
+    assert "src/auth.py" in body["at_risk"]

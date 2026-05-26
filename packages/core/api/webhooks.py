@@ -41,33 +41,15 @@ async def _get_changed_files(repo: str, sha: str) -> list[str]:
 
 
 async def _run_pipeline(event: FailureEvent) -> None:
-    from core.db.neo4j import neo4j_session
-    from core.embeddings.dedup import dedup
-    from core.embeddings.pipeline import embed
-    from core.graph.scoring import recompute_fragility
-    from core.graph.writer import write
-    from core.ingestor.signature import extract
+    from core.orchestrator.pipeline import pipeline
 
-    signature = await extract(event)
-    if signature is None:
-        return
-
-    signature = await embed(signature)
-
-    async with neo4j_session() as session:
-        result = await dedup(signature, session)
-        await write(signature, result, session)
-        await recompute_fragility(session)
-
-    logger.info(
-        "signature=%s category=%s embedding_dim=%d dedup=%s matched=%s run=%s",
-        signature.id,
-        signature.category,
-        len(signature.embedding),
-        result.kind,
-        result.matched_id,
-        event.run_id,
-    )
+    await pipeline.ainvoke({
+        "event": event,
+        "signature": None,
+        "predictions": [],
+        "at_risk": [],
+        "fragility_scores": {},
+    })
 
 
 @router.post("/github", status_code=202)

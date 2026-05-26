@@ -35,3 +35,12 @@ class FailureSignature(BaseModel):
     first_seen: datetime
     last_seen: datetime
     occurrence_count: int
+
+
+class Fix(BaseModel):
+    id: str
+    commit_sha: str
+    author_type: str  # "human" | "ai"
+    description: str
+    timestamp: datetime
+    suppressed_by: str | None = None  # ID of the Fix this suppresses

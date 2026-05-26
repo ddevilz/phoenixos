@@ -1,9 +1,18 @@
 import logging
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/graph")
+
+
+class PredictRequest(BaseModel):
+    changed_files: list[str]
+
+
+class BlastRadiusRequest(BaseModel):
+    changed_files: list[str]
 
 
 @router.get("/fragility")
@@ -49,4 +58,43 @@ async def get_flakiness(
             return await get_flakiness_trajectory(component, session, window_days)
     except Exception as exc:
         logger.error("Flakiness trajectory query failed for %s: %s", component, exc)
+        raise HTTPException(status_code=503, detail="Graph database unavailable")
+
+
+@router.get("/genealogy/{fix_id}")
+async def get_genealogy(fix_id: str):
+    from core.db.neo4j import neo4j_session
+    from core.graph.genealogy import get_fix_genealogy
+
+    try:
+        async with neo4j_session() as session:
+            return await get_fix_genealogy(fix_id, session)
+    except Exception as exc:
+        logger.error("Genealogy query failed for %s: %s", fix_id, exc)
+        raise HTTPException(status_code=503, detail="Graph database unavailable")
+
+
+@router.post("/predict")
+async def predict(body: PredictRequest):
+    from core.agents.predictor import predict_failures
+    from core.db.neo4j import neo4j_session
+
+    try:
+        async with neo4j_session() as session:
+            return await predict_failures(body.changed_files, session)
+    except Exception as exc:
+        logger.error("Predict failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Graph database unavailable")
+
+
+@router.post("/blast-radius")
+async def blast_radius(body: BlastRadiusRequest):
+    from core.db.neo4j import neo4j_session
+    from core.graph.blast_radius import get_blast_radius
+
+    try:
+        async with neo4j_session() as session:
+            return await get_blast_radius(body.changed_files, session)
+    except Exception as exc:
+        logger.error("Blast radius failed: %s", exc)
         raise HTTPException(status_code=503, detail="Graph database unavailable")
