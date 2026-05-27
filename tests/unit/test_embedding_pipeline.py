@@ -40,7 +40,7 @@ async def test_embed_text_calls_correct_model() -> None:
 
     mock_client.embeddings.create.assert_called_once()
     call_kwargs = mock_client.embeddings.create.call_args.kwargs
-    assert call_kwargs["model"] == "text-embedding-3-small"
+    assert call_kwargs["model"] == "nvidia/nv-embedqa-e5-v5"
     assert result == [0.1] * 1536
 
 

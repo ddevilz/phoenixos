@@ -20,7 +20,7 @@ class FailureEvent(BaseModel):
 
 
 class FailureSignatureExtract(BaseModel):
-    """Trimmed model for gpt-4o-mini structured output — only fields the LLM fills."""
+    """Trimmed model for LLM structured output — only fields the LLM fills."""
     summary: str
     category: Literal["test_failure", "build_error", "contract_violation", "flaky"]
     affected_component: str
@@ -31,7 +31,7 @@ class FailureSignature(BaseModel):
     summary: str
     category: Literal["test_failure", "build_error", "contract_violation", "flaky"]
     affected_component: str
-    embedding: list[float]   # 1536-dim — empty [] until T06 fills it
+    embedding: list[float]   # empty [] until T06 fills it
     first_seen: datetime
     last_seen: datetime
     occurrence_count: int

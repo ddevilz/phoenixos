@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -22,14 +23,14 @@ def _make_event(**overrides) -> FailureEvent:
 
 
 def _mock_openai_response(summary: str, category: str, component: str):
-    """Build a mock that mimics client.beta.chat.completions.parse() response."""
-    parsed = FailureSignatureExtract(
-        summary=summary,
-        category=category,
-        affected_component=component,
-    )
+    """Build a mock that mimics client.chat.completions.create() response."""
+    payload = json.dumps({
+        "summary": summary,
+        "category": category,
+        "affected_component": component,
+    })
     choice = MagicMock()
-    choice.message.parsed = parsed
+    choice.message.content = payload
     response = MagicMock()
     response.choices = [choice]
     return response
@@ -46,7 +47,7 @@ async def test_extract_returns_failure_signature():
 
     with patch("core.ingestor.signature._get_openai") as mock_get_client:
         mock_client = AsyncMock()
-        mock_client.beta.chat.completions.parse = AsyncMock(return_value=mock_response)
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
         mock_get_client.return_value = mock_client
 
         result = await extract(_make_event())
@@ -66,7 +67,7 @@ async def test_extract_returns_none_on_llm_error():
 
     with patch("core.ingestor.signature._get_openai") as mock_get_client:
         mock_client = AsyncMock()
-        mock_client.beta.chat.completions.parse = AsyncMock(
+        mock_client.chat.completions.create = AsyncMock(
             side_effect=Exception("API error")
         )
         mock_get_client.return_value = mock_client
@@ -81,14 +82,14 @@ async def test_extract_returns_none_on_timeout():
 
     from core.ingestor.signature import extract
 
-    async def slow_parse(*args, **kwargs):
+    async def slow_create(*args, **kwargs):
         await asyncio.sleep(100)
 
     with patch("core.ingestor.signature._get_openai") as mock_get_client, patch(
         "core.ingestor.signature._TIMEOUT", 0.01
     ):
         mock_client = AsyncMock()
-        mock_client.beta.chat.completions.parse = slow_parse
+        mock_client.chat.completions.create = slow_create
         mock_get_client.return_value = mock_client
 
         result = await extract(_make_event())
@@ -103,13 +104,13 @@ async def test_extract_uses_log_tail_in_prompt():
     mock_response = _mock_openai_response("desc", "test_failure", "src/test.py")
     captured_messages = []
 
-    async def capture_parse(*args, **kwargs):
+    async def capture_create(*args, **kwargs):
         captured_messages.extend(kwargs.get("messages", []))
         return mock_response
 
     with patch("core.ingestor.signature._get_openai") as mock_get_client:
         mock_client = AsyncMock()
-        mock_client.beta.chat.completions.parse = capture_parse
+        mock_client.chat.completions.create = capture_create
         mock_get_client.return_value = mock_client
 
         await extract(_make_event(log_tail="FATAL: connection refused on port 5432"))

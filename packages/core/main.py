@@ -1,6 +1,9 @@
 from contextlib import asynccontextmanager
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
+
+load_dotenv()
 
 from core.api.graph import router as graph_router
 from core.api.webhooks import router as webhooks_router
