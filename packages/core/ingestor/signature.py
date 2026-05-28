@@ -10,7 +10,7 @@ from core.models.failure import FailureEvent, FailureSignature, FailureSignature
 
 logger = logging.getLogger(__name__)
 
-_TIMEOUT: float = 15.0
+_TIMEOUT: float = 60.0
 _MODEL = "minimaxai/minimax-m2.7"
 _BASE_URL = os.environ.get("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
 _API_KEY = os.environ.get("NVIDIA_API_KEY", "")
@@ -34,6 +34,26 @@ def _get_openai() -> AsyncOpenAI:
     return _openai_client
 
 
+async def _stream_completion(messages: list[dict]) -> str:
+    """Stream response from NVIDIA NIM and return accumulated text."""
+    chunks: list[str] = []
+    stream = await _get_openai().chat.completions.create(
+        model=_MODEL,
+        messages=messages,
+        temperature=1,
+        top_p=0.95,
+        max_tokens=8192,
+        stream=True,
+    )
+    async for chunk in stream:
+        if not getattr(chunk, "choices", None):
+            continue
+        delta = chunk.choices[0].delta.content
+        if delta is not None:
+            chunks.append(delta)
+    return "".join(chunks)
+
+
 async def extract(event: FailureEvent) -> FailureSignature | None:
     user_content = (
         f"Workflow: {event.workflow}\n"
@@ -41,22 +61,19 @@ async def extract(event: FailureEvent) -> FailureSignature | None:
         f"Step: {event.step}\n\n"
         f"Log (last 2000 chars):\n{event.log_tail or '(no log available)'}"
     )
+    messages = [
+        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "user", "content": user_content},
+    ]
 
     try:
-        response = await asyncio.wait_for(
-            _get_openai().chat.completions.create(
-                model=_MODEL,
-                messages=[
-                    {"role": "system", "content": _SYSTEM_PROMPT},
-                    {"role": "user", "content": user_content},
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.1,
-                max_tokens=512,
-            ),
-            timeout=_TIMEOUT,
-        )
-        raw = response.choices[0].message.content or ""
+        raw = await asyncio.wait_for(_stream_completion(messages), timeout=_TIMEOUT)
+        # Extract JSON from response (model may wrap it in markdown fences)
+        if "```" in raw:
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        raw = raw.strip()
         llm = FailureSignatureExtract.model_validate(json.loads(raw))
     except Exception as exc:
         logger.error("Signature extraction failed for run %s: %s", event.run_id, exc)

@@ -1,8 +1,8 @@
 import json
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
-from core.models.failure import FailureEvent, FailureSignature, FailureSignatureExtract
+from core.models.failure import FailureEvent, FailureSignature
 
 
 def _make_event(**overrides) -> FailureEvent:
@@ -22,34 +22,24 @@ def _make_event(**overrides) -> FailureEvent:
     return FailureEvent(**defaults)
 
 
-def _mock_openai_response(summary: str, category: str, component: str):
-    """Build a mock that mimics client.chat.completions.create() response."""
-    payload = json.dumps({
+def _json_response(summary: str, category: str, component: str) -> str:
+    return json.dumps({
         "summary": summary,
         "category": category,
         "affected_component": component,
     })
-    choice = MagicMock()
-    choice.message.content = payload
-    response = MagicMock()
-    response.choices = [choice]
-    return response
 
 
 async def test_extract_returns_failure_signature():
     from core.ingestor.signature import extract
 
-    mock_response = _mock_openai_response(
-        summary="ImportError in auth module prevents startup",
-        category="build_error",
-        component="src/auth.py",
-    )
-
-    with patch("core.ingestor.signature._get_openai") as mock_get_client:
-        mock_client = AsyncMock()
-        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
-        mock_get_client.return_value = mock_client
-
+    with patch(
+        "core.ingestor.signature._stream_completion",
+        new_callable=AsyncMock,
+        return_value=_json_response(
+            "ImportError in auth module prevents startup", "build_error", "src/auth.py"
+        ),
+    ):
         result = await extract(_make_event())
 
     assert result is not None
@@ -65,13 +55,11 @@ async def test_extract_returns_failure_signature():
 async def test_extract_returns_none_on_llm_error():
     from core.ingestor.signature import extract
 
-    with patch("core.ingestor.signature._get_openai") as mock_get_client:
-        mock_client = AsyncMock()
-        mock_client.chat.completions.create = AsyncMock(
-            side_effect=Exception("API error")
-        )
-        mock_get_client.return_value = mock_client
-
+    with patch(
+        "core.ingestor.signature._stream_completion",
+        new_callable=AsyncMock,
+        side_effect=Exception("API error"),
+    ):
         result = await extract(_make_event())
 
     assert result is None
@@ -82,38 +70,28 @@ async def test_extract_returns_none_on_timeout():
 
     from core.ingestor.signature import extract
 
-    async def slow_create(*args, **kwargs):
+    async def slow(*args, **kwargs):
         await asyncio.sleep(100)
 
-    with patch("core.ingestor.signature._get_openai") as mock_get_client, patch(
+    with patch("core.ingestor.signature._stream_completion", side_effect=slow), patch(
         "core.ingestor.signature._TIMEOUT", 0.01
     ):
-        mock_client = AsyncMock()
-        mock_client.chat.completions.create = slow_create
-        mock_get_client.return_value = mock_client
-
         result = await extract(_make_event())
 
     assert result is None
 
 
 async def test_extract_uses_log_tail_in_prompt():
-    """Verify log_tail content is included in the LLM call."""
     from core.ingestor.signature import extract
 
-    mock_response = _mock_openai_response("desc", "test_failure", "src/test.py")
-    captured_messages = []
+    captured: list[list[dict]] = []
 
-    async def capture_create(*args, **kwargs):
-        captured_messages.extend(kwargs.get("messages", []))
-        return mock_response
+    async def capture(messages):
+        captured.append(messages)
+        return _json_response("desc", "test_failure", "src/test.py")
 
-    with patch("core.ingestor.signature._get_openai") as mock_get_client:
-        mock_client = AsyncMock()
-        mock_client.chat.completions.create = capture_create
-        mock_get_client.return_value = mock_client
-
+    with patch("core.ingestor.signature._stream_completion", side_effect=capture):
         await extract(_make_event(log_tail="FATAL: connection refused on port 5432"))
 
-    full_text = " ".join(m["content"] for m in captured_messages)
+    full_text = " ".join(m["content"] for m in captured[0])
     assert "connection refused on port 5432" in full_text
