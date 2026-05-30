@@ -6,4 +6,5 @@ data/*
 !data/.gitkeep
 node_modules/
 .pnpm-store/
+packages/mcp/dist/
 docs/superpowers/
