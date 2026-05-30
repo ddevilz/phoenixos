@@ -21,7 +21,7 @@ _SYSTEM_PROMPT = (
     "- category: one of test_failure, build_error, contract_violation, flaky\n"
     "- affected_component: the primary file path or module name that caused the failure\n\n"
     "Be specific. Use the actual error in the log, not generic descriptions.\n"
-    "Respond with a JSON object containing exactly these fields: summary, category, affected_component."
+    "Respond with a JSON object with exactly these fields: summary, category, affected_component."
 )
 
 _openai_client: AsyncOpenAI | None = None

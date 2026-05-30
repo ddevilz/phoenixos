@@ -3,6 +3,12 @@ import logging
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from core.agents.predictor import predict_failures
+from core.db.neo4j import neo4j_session
+from core.graph.blast_radius import get_blast_radius
+from core.graph.genealogy import get_fix_genealogy
+from core.graph.scoring import get_flakiness_trajectory, recompute_fragility
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/graph")
 
@@ -17,8 +23,6 @@ class BlastRadiusRequest(BaseModel):
 
 @router.get("/fragility")
 async def get_fragility_scores():
-    from core.db.neo4j import neo4j_session
-
     try:
         async with neo4j_session() as session:
             result = await session.run(
@@ -33,9 +37,6 @@ async def get_fragility_scores():
 
 @router.post("/fragility/recompute")
 async def force_recompute_fragility():
-    from core.db.neo4j import neo4j_session
-    from core.graph.scoring import recompute_fragility
-
     try:
         async with neo4j_session() as session:
             scores = await recompute_fragility(session)
@@ -50,9 +51,6 @@ async def get_flakiness(
     component: str,
     window_days: int = Query(default=28, ge=1, le=365),
 ):
-    from core.db.neo4j import neo4j_session
-    from core.graph.scoring import get_flakiness_trajectory
-
     try:
         async with neo4j_session() as session:
             return await get_flakiness_trajectory(component, session, window_days)
@@ -63,9 +61,6 @@ async def get_flakiness(
 
 @router.get("/genealogy/{fix_id}")
 async def get_genealogy(fix_id: str):
-    from core.db.neo4j import neo4j_session
-    from core.graph.genealogy import get_fix_genealogy
-
     try:
         async with neo4j_session() as session:
             return await get_fix_genealogy(fix_id, session)
@@ -76,9 +71,6 @@ async def get_genealogy(fix_id: str):
 
 @router.post("/predict")
 async def predict(body: PredictRequest):
-    from core.agents.predictor import predict_failures
-    from core.db.neo4j import neo4j_session
-
     try:
         async with neo4j_session() as session:
             return await predict_failures(body.changed_files, session)
@@ -89,9 +81,6 @@ async def predict(body: PredictRequest):
 
 @router.post("/blast-radius")
 async def blast_radius(body: BlastRadiusRequest):
-    from core.db.neo4j import neo4j_session
-    from core.graph.blast_radius import get_blast_radius
-
     try:
         async with neo4j_session() as session:
             return await get_blast_radius(body.changed_files, session)

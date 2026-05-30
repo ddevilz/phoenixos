@@ -33,7 +33,7 @@ async def test_get_fragility_returns_scores(client) -> None:
     mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
     mock_ctx.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("core.db.neo4j.neo4j_session", return_value=mock_ctx):
+    with patch("core.api.graph.neo4j_session", return_value=mock_ctx):
         r = await client.get("/api/graph/fragility")
 
     assert r.status_code == 200
@@ -51,9 +51,9 @@ async def test_post_recompute_returns_count(client) -> None:
     mock_ctx.__aexit__ = AsyncMock(return_value=False)
 
     with (
-        patch("core.db.neo4j.neo4j_session", return_value=mock_ctx),
+        patch("core.api.graph.neo4j_session", return_value=mock_ctx),
         patch(
-            "core.graph.scoring.recompute_fragility",
+            "core.api.graph.recompute_fragility",
             new_callable=AsyncMock,
             return_value={"sig-1": 0.6, "sig-2": 0.4},
         ),
@@ -81,9 +81,9 @@ async def test_get_flakiness_returns_trajectory(client) -> None:
     mock_ctx.__aexit__ = AsyncMock(return_value=False)
 
     with (
-        patch("core.db.neo4j.neo4j_session", return_value=mock_ctx),
+        patch("core.api.graph.neo4j_session", return_value=mock_ctx),
         patch(
-            "core.graph.scoring.get_flakiness_trajectory",
+            "core.api.graph.get_flakiness_trajectory",
             new_callable=AsyncMock,
             return_value=expected,
         ),
@@ -98,7 +98,7 @@ async def test_get_flakiness_returns_trajectory(client) -> None:
 
 
 async def test_get_fragility_returns_503_when_neo4j_unavailable(client) -> None:
-    with patch("core.db.neo4j.neo4j_session", side_effect=Exception("driver not ready")):
+    with patch("core.api.graph.neo4j_session", side_effect=Exception("driver not ready")):
         r = await client.get("/api/graph/fragility")
 
     assert r.status_code == 503
@@ -123,9 +123,9 @@ async def test_get_genealogy_returns_chain(client) -> None:
     mock_ctx.__aexit__ = AsyncMock(return_value=False)
 
     with (
-        patch("core.db.neo4j.neo4j_session", return_value=mock_ctx),
+        patch("core.api.graph.neo4j_session", return_value=mock_ctx),
         patch(
-            "core.graph.genealogy.get_fix_genealogy",
+            "core.api.graph.get_fix_genealogy",
             new_callable=AsyncMock,
             return_value=expected,
         ),
@@ -157,9 +157,9 @@ async def test_post_predict_returns_predictions(client) -> None:
     mock_ctx.__aexit__ = AsyncMock(return_value=False)
 
     with (
-        patch("core.db.neo4j.neo4j_session", return_value=mock_ctx),
+        patch("core.api.graph.neo4j_session", return_value=mock_ctx),
         patch(
-            "core.agents.predictor.predict_failures",
+            "core.api.graph.predict_failures",
             new_callable=AsyncMock,
             return_value=predictions,
         ),
@@ -184,9 +184,9 @@ async def test_post_blast_radius_returns_at_risk(client) -> None:
     mock_ctx.__aexit__ = AsyncMock(return_value=False)
 
     with (
-        patch("core.db.neo4j.neo4j_session", return_value=mock_ctx),
+        patch("core.api.graph.neo4j_session", return_value=mock_ctx),
         patch(
-            "core.graph.blast_radius.get_blast_radius",
+            "core.api.graph.get_blast_radius",
             new_callable=AsyncMock,
             return_value=expected,
         ),

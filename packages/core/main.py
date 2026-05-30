@@ -1,15 +1,17 @@
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
 
-load_dotenv()
+load_dotenv()  # must run before any module that reads env vars at import time
 
-from core.api.graph import router as graph_router
-from core.api.webhooks import router as webhooks_router
-from core.api.ws import router as ws_router
-from core.db.neo4j import close_driver, init_driver, init_schema
-from core.db.sqlite import init_db
+from fastapi import FastAPI  # noqa: E402
+
+from core.api.evals import router as evals_router  # noqa: E402
+from core.api.graph import router as graph_router  # noqa: E402
+from core.api.webhooks import router as webhooks_router  # noqa: E402
+from core.api.ws import router as ws_router  # noqa: E402
+from core.db.neo4j import close_driver, init_driver, init_schema  # noqa: E402
+from core.db.sqlite import init_db  # noqa: E402
 
 
 @asynccontextmanager
@@ -25,6 +27,7 @@ app = FastAPI(title="PhoenixOS", lifespan=lifespan)
 app.include_router(webhooks_router)
 app.include_router(graph_router)
 app.include_router(ws_router)
+app.include_router(evals_router)
 
 
 @app.get("/health")

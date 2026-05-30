@@ -44,3 +44,17 @@ class Fix(BaseModel):
     description: str
     timestamp: datetime
     suppressed_by: str | None = None  # ID of the Fix this suppresses
+
+
+class JudgeResult(BaseModel):
+    judge: Literal["behavior", "security", "regression"]
+    score: float        # 0.0 (fail) – 1.0 (pass)
+    verdict: Literal["pass", "warn", "block"]
+    reasoning: str      # 1-3 sentence explanation
+    flags: list[str]    # Specific issues found
+
+
+class AggregateScore(BaseModel):
+    trust_score: float  # behavior*0.4 + security*0.4 + regression*0.2
+    verdict: Literal["pass", "warn", "block"]
+    judge_results: list[JudgeResult]
