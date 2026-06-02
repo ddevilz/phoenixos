@@ -66,6 +66,8 @@ async def extract(event: FailureEvent) -> FailureSignature | None:
         {"role": "user", "content": user_content},
     ]
 
+    _VALID_CATEGORIES = {"test_failure", "build_error", "contract_violation", "flaky"}
+
     try:
         raw = await asyncio.wait_for(_stream_completion(messages), timeout=_TIMEOUT)
         # Extract JSON from response (model may wrap it in markdown fences)
@@ -74,7 +76,11 @@ async def extract(event: FailureEvent) -> FailureSignature | None:
             if raw.startswith("json"):
                 raw = raw[4:]
         raw = raw.strip()
-        llm = FailureSignatureExtract.model_validate(json.loads(raw))
+        parsed = json.loads(raw)
+        # Normalize unknown categories rather than failing validation
+        if parsed.get("category") not in _VALID_CATEGORIES:
+            parsed["category"] = "test_failure"
+        llm = FailureSignatureExtract.model_validate(parsed)
     except Exception as exc:
         logger.error("Signature extraction failed for run %s: %s", event.run_id, exc)
         return None

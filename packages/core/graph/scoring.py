@@ -43,7 +43,14 @@ async def recompute_fragility(session: AsyncSession) -> dict[str, float]:
         if len(G) == 0:
             return {}
 
-        scores: dict[str, float] = nx.pagerank(G, weight="weight", alpha=_PAGERANK_ALPHA)
+        raw: dict[str, float] = nx.pagerank(G, weight="weight", alpha=_PAGERANK_ALPHA)
+
+        # Scale by N/2 so a node with 2× average PageRank scores 1.0 (red).
+        # Raw PageRank sums to 1.0, so average = 1/N. Multiplying by N/2 gives
+        # average nodes ~0.5 (amber) and well-connected nodes ≥1.0 → clamped red.
+        n = len(G)
+        scale = n / 2.0
+        scores = {k: min(1.0, v * scale) for k, v in raw.items()}
 
         await session.run(
             _CYPHER_WRITE_SCORES,
