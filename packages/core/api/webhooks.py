@@ -122,4 +122,4 @@ async def github_webhook(
     await db.commit()
 
     background_tasks.add_task(_run_pipeline, event)
-    return {"status": "accepted", "run_id": event.run_id}
+    return {"status": "accepted", "run_id": event.run_id, "event_id": event.id}

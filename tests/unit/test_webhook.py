@@ -112,6 +112,22 @@ async def test_webhook_accepts_failure_and_returns_run_id(client):
     assert r.json()["run_id"] == "99999"
 
 
+async def test_webhook_response_includes_event_id(client):
+    body = json.dumps(FAILURE_PAYLOAD).encode()
+    with patch.dict("os.environ", {"GITHUB_WEBHOOK_SECRET": ""}):
+        r = await client.post(
+            "/api/webhooks/github",
+            content=body,
+            headers={"Content-Type": "application/json"},
+        )
+    assert r.status_code == 202
+    data = r.json()
+    assert "event_id" in data, f"response missing event_id: {data}"
+    # event_id is the SQLite PK — must be a UUID4 string
+    assert len(data["event_id"]) == 36
+    assert data["event_id"].count("-") == 4
+
+
 async def test_webhook_writes_to_sqlite(client, tmp_path):
     import aiosqlite
 
