@@ -12,6 +12,8 @@ dependencies = [
     "networkx>=3.3",
     "python-dotenv>=1.0",
     "aiosqlite>=0.20",
+    "numpy>=2.4.6",
+    "scipy>=1.17.1",
 ]
 
 [project.optional-dependencies]
@@ -37,6 +39,10 @@ line-length = 100
 [tool.ruff.lint]
 select = ["E", "F", "I"]
 
+[tool.ruff.lint.per-file-ignores]
+# Demo seed scripts embed long sample CI log lines as string literals.
+"scripts/*" = ["E501"]
+
 [tool.mypy]
 python_version = "3.11"
 ignore_missing_imports = true
@@ -44,3 +50,4 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+pythonpath = ["packages"]

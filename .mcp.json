@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "phoenixos": {
+      "command": "node",
+      "args": ["packages/mcp/dist/index.js"],
+      "env": {
+        "PHOENIX_API_URL": "http://localhost:8000"
+      }
+    }
+  }
+}
