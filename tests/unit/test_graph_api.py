@@ -220,3 +220,47 @@ async def test_post_blast_radius_returns_at_risk(client) -> None:
     assert "at_risk" in body
     assert "fragility_scores" in body
     assert "src/auth.py" in body["at_risk"]
+
+
+async def test_get_network_returns_nodes_and_edges(client) -> None:
+    nodes = [
+        {
+            "id": "sig-1",
+            "fragility_score": 0.81,
+            "summary": "timeout regression",
+            "category": "test_failure",
+            "affected_component": "lib/transfer.c",
+            "occurrence_count": 7,
+            "first_seen": "2026-03-02T00:00:00",
+            "last_seen": "2026-06-05T00:00:00",
+        }
+    ]
+    edges = [{"source": "sig-1", "target": "sig-2", "similarity": 0.87}]
+
+    nodes_result = AsyncMock()
+    nodes_result.data = AsyncMock(return_value=nodes)
+    edges_result = AsyncMock()
+    edges_result.data = AsyncMock(return_value=edges)
+
+    mock_session = AsyncMock()
+    # two queries: nodes first, edges second
+    mock_session.run = AsyncMock(side_effect=[nodes_result, edges_result])
+    mock_ctx = MagicMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("core.api.graph.neo4j_session", return_value=mock_ctx):
+        r = await client.get("/api/graph/network")
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["nodes"][0]["id"] == "sig-1"
+    assert body["nodes"][0]["affected_component"] == "lib/transfer.c"
+    assert body["edges"][0]["source"] == "sig-1"
+    assert body["edges"][0]["similarity"] == 0.87
+
+
+async def test_get_network_returns_503_when_neo4j_unavailable(client) -> None:
+    with patch("core.api.graph.neo4j_session", side_effect=Exception("driver not ready")):
+        r = await client.get("/api/graph/network")
+    assert r.status_code == 503

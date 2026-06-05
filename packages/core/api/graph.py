@@ -78,6 +78,31 @@ async def predict(body: PredictRequest):
         raise HTTPException(status_code=503, detail="Graph database unavailable")
 
 
+@router.get("/network")
+async def get_network():
+    """Full graph: signature nodes + real SIMILAR_TO edges + metadata. One call."""
+    try:
+        async with neo4j_session() as session:
+            nodes_result = await session.run(
+                "MATCH (s:FailureSignature) "
+                "RETURN s.id AS id, s.fragility_score AS fragility_score, "
+                "s.summary AS summary, s.category AS category, "
+                "s.affected_component AS affected_component, "
+                "s.occurrence_count AS occurrence_count, "
+                "s.first_seen AS first_seen, s.last_seen AS last_seen"
+            )
+            nodes = await nodes_result.data()
+            edges_result = await session.run(
+                "MATCH (a:FailureSignature)-[r:SIMILAR_TO]->(b:FailureSignature) "
+                "RETURN a.id AS source, b.id AS target, r.similarity AS similarity"
+            )
+            edges = await edges_result.data()
+        return {"nodes": nodes, "edges": edges}
+    except Exception as exc:
+        logger.error("Network query failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Graph database unavailable")
+
+
 @router.post("/blast-radius")
 async def blast_radius(body: BlastRadiusRequest):
     try:
