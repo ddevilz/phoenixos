@@ -30,3 +30,9 @@ export function neighborsOf(id: string, links: GraphLink[]): string[] {
     .filter((l) => l.source === id || l.target === id)
     .map((l) => (l.source === id ? l.target : l.source));
 }
+
+export function scoreColor(score: number): string {
+  if (score >= 0.7) return "#ef4444";
+  if (score >= 0.4) return "#f59e0b";
+  return "#22c55e";
+}

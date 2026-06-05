@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { neighborsOf } from "@/lib/graph";
+import { neighborsOf, scoreColor } from "@/lib/graph";
 import type { GraphNode, GraphLink } from "@/lib/graph";
 
 type Tab = "overview" | "neighbors" | "flakiness" | "blast";
@@ -10,10 +10,6 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "flakiness", label: "Flakiness" },
   { key: "blast", label: "Blast radius" },
 ];
-
-function scoreColor(s: number) {
-  return s >= 0.7 ? "#ef4444" : s >= 0.4 ? "#f59e0b" : "#22c55e";
-}
 
 export default function NodeInspector({
   node,
@@ -30,6 +26,9 @@ export default function NodeInspector({
 }) {
   const [tab, setTab] = useState<Tab>("overview");
 
+  // FIX 6: reset to overview tab whenever the inspected node changes
+  useEffect(() => { setTab("overview"); }, [node.id]);
+
   const neighborIds = neighborsOf(node.id, links);
   const neighbors = nodes.filter((n) => neighborIds.includes(n.id));
 
@@ -37,7 +36,7 @@ export default function NodeInspector({
     <div className="bg-panel border border-border rounded-lg text-sm">
       <div className="flex justify-between items-center p-3 border-b border-border">
         <p className="font-mono text-xs text-muted truncate">{node.affected_component}</p>
-        <button onClick={onClose} className="text-muted hover:text-gray-300 text-lg leading-none">
+        <button onClick={onClose} aria-label="Close inspector" className="text-muted hover:text-gray-300 text-lg leading-none">
           ×
         </button>
       </div>
