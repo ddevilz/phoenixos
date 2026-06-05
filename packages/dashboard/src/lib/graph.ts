@@ -24,3 +24,9 @@ export function diffNewNodeIds(prevIds: string[], nextIds: string[]): string[] {
   const prev = new Set(prevIds);
   return nextIds.filter((id) => !prev.has(id));
 }
+
+export function neighborsOf(id: string, links: GraphLink[]): string[] {
+  return links
+    .filter((l) => l.source === id || l.target === id)
+    .map((l) => (l.source === id ? l.target : l.source));
+}
