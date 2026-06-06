@@ -35,7 +35,13 @@ Copy `infra/.env.example` to `.env` at the project root and fill in every value 
 
 ### Demo repo
 
-You need a GitHub repository you control that has a GitHub Actions workflow running a test suite. A minimal example is in Section 3.
+A ready-made demo repo already exists: **https://github.com/ddevilz/phoenix-demo**. It has a real GitHub Actions test suite (green on `main`) plus `break.sh` / `reset.sh` to fail and restore it on cue. Clone it next to this project:
+
+```bash
+git clone https://github.com/ddevilz/phoenix-demo.git ~/Desktop/phoenix-demo
+```
+
+Section 3 documents its layout. (If you'd rather build your own, the same structure works.)
 
 ---
 
@@ -115,55 +121,54 @@ In your demo repo on GitHub: **Settings → Webhooks → Add webhook**
 
 Click **Add webhook**. GitHub will send a ping event; the core API returns 200 and logs it.
 
+**Faster (CLI, no clicking)** — register the webhook on `ddevilz/phoenix-demo` in one command once the tunnel URL is known:
+
+```bash
+gh api repos/ddevilz/phoenix-demo/hooks -X POST \
+  -f name=web -F active=true -f 'events[]=workflow_run' \
+  -f config[url]="<tunnel-url>/api/webhooks/github" \
+  -f config[content_type]=json \
+  -f config[secret]="$GITHUB_WEBHOOK_SECRET"
+```
+
+To update the URL on a later tunnel restart: `gh api repos/ddevilz/phoenix-demo/hooks` to list (grab the hook `id`), then `gh api repos/ddevilz/phoenix-demo/hooks/<id> -X PATCH -f config[url]="<new-url>/api/webhooks/github" -f config[content_type]=json -f config[secret]="$GITHUB_WEBHOOK_SECRET"`.
+
 > **Why this path?** The webhook router is mounted at prefix `/api/webhooks` (see `packages/core/api/webhooks.py` line 19) and the POST endpoint is `/github` (line 57). The full path is therefore `/api/webhooks/github`.
 
 ---
 
-## 3. Demo repo setup
+## 3. Demo repo setup (`ddevilz/phoenix-demo`)
 
-### Minimal repo structure
+The repo at **https://github.com/ddevilz/phoenix-demo** is ready to use.
+
+### Layout
 
 ```
-demo-repo/
-├── .github/
-│   └── workflows/
-│       └── test.yml
-├── src/
-│   └── parser.py
-└── tests/
-    └── test_parser.py
+phoenix-demo/
+├── .github/workflows/ci.yml   # runs pytest on every push / PR
+├── src/transfer.py            # transfer layer with a 30s budget
+├── tests/test_transfer.py     # asserts elapsed <= 30s
+├── break.sh                   # introduce the regression + push (run LIVE)
+└── reset.sh                   # restore green to re-run the demo
 ```
 
-### `.github/workflows/test.yml`
+### How it fails on cue
 
-```yaml
-name: CI
-on: [push, pull_request]
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - run: pip install pytest
-      - run: pytest tests/ -v
+`main` is green: `simulate_transfer()` returns `12` (≤ 30s budget). `break.sh` flips that return to `42` and pushes, so the test fails with:
+
+```
+transfer timeout regression: elapsed exceeded 30s budget
 ```
 
-### Prepared breaking commit
+That message is deliberately **timeout-themed** — PhoenixOS extracts a signature whose embedding lands next to the seeded `curl/curl` `lib/transfer.c` timeout cluster, so the new node arrives **with a real `SIMILAR_TO` edge** and a populated blast radius rather than floating alone.
 
-Create a branch (`breaking/parser-regression`) with a change that fails a specific test. For a predictable narration, touch a file that matches one of the seeded fragile components — e.g. something in a parser or transfer layer module. Example:
+### One-time prep
 
-```python
-# tests/test_parser.py — break one assertion so CI fails deterministically
-def test_parse_timeout():
-    assert parse_timeout("30s") == 35  # was 30 — intentional regression
+```bash
+git clone https://github.com/ddevilz/phoenix-demo.git ~/Desktop/phoenix-demo
 ```
 
-Commit message: `feat: change timeout parsing — regression in transfer layer`
-
-Keep the branch ready to push during the demo.
+No editing needed. Just keep this checkout handy; you run `break.sh` during the demo.
 
 ---
 
@@ -172,10 +177,12 @@ Keep the branch ready to push during the demo.
 ### Beat 1 — Push the breaking commit (~0:00)
 
 ```bash
-git push origin breaking/parser-regression
+cd ~/Desktop/phoenix-demo && ./break.sh
 ```
 
-GitHub Actions picks it up immediately. The workflow runs, the test fails, and the `workflow_run` webhook fires with `action: completed` and `conclusion: failure`.
+`break.sh` introduces the regression, commits, and pushes to `main`. GitHub Actions picks it up immediately. The workflow runs, the test fails, and the `workflow_run` webhook fires with `action: completed` and `conclusion: failure`.
+
+> After the demo, run `./reset.sh` to restore green so you can replay.
 
 ### Beat 2 — Watch the LiveFeed ticker (~0:30–1:00)
 
@@ -208,11 +215,14 @@ Click the node. The right-side inspector opens with four tabs:
 
 > **Narration:** "Every new failure is deduplicated in embedding space. Cosine ≥ 0.92 = exact duplicate (counter increments, no new node). 0.80–0.92 = similar (new node + SIMILAR_TO edge). Below 0.80 = novel failure. This node got a SIMILAR_TO edge to the seeded `lib/transfer.c` timeout signature because the test message is semantically close."
 
-### Beat 5 — Open a PR and run an eval (~2:00–3:00)
+### Beat 5 — Run an eval (~2:00–3:00)
 
-On GitHub, open a PR from `breaking/parser-regression` → `main`. Copy the PR URL.
+In the dashboard, navigate to **Evals** (top nav). Two ways to feed it:
 
-In the dashboard, navigate to **Evals** (top nav). Paste the PR URL into the eval input and click **Run Eval**.
+- **Open a PR**: instead of `break.sh` (which pushes to `main`), make the same regression on a branch and open a PR to `main`, then paste the PR URL into the eval input. Best for the full story.
+- **Paste a diff**: skip GitHub entirely — paste the `break.sh` diff (the `return 12` → `return 42` change in `src/transfer.py`) straight into the diff box. Fastest, no network dependency.
+
+Click **Run Eval**.
 
 The three judges run in parallel (asyncio.gather):
 
