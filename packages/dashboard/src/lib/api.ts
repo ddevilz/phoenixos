@@ -31,3 +31,21 @@ export interface PhoenixEvent {
   run_id: string;
   payload: Record<string, unknown>;
 }
+
+export interface NetworkNode {
+  id: string;
+  fragility_score: number;
+  summary: string;
+  category: string;
+  affected_component: string;
+  occurrence_count: number;
+  first_seen: string;
+  last_seen: string;
+}
+export interface NetworkEdge { source: string; target: string; similarity: number; }
+export interface NetworkResponse { nodes: NetworkNode[]; edges: NetworkEdge[]; }
+
+export function wsUrl(path: string): string {
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  return `${proto}://${location.host}${path}`;
+}

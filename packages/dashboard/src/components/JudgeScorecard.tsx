@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { apiFetch, type AggregateScore, type JudgeResult } from "@/lib/api";
+import { extractComponents } from "@/lib/judges";
 
 const VERDICT_STYLES = {
   pass: "bg-pass/10 text-pass border-pass/30",
@@ -107,6 +109,20 @@ export default function JudgeScorecard() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {result.judge_results.map((r) => <JudgeCard key={r.judge} r={r} />)}
           </div>
+          {(() => {
+            const comps = [...new Set(result.judge_results.flatMap((r) => extractComponents(r.reasoning)))];
+            return comps.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <span className="text-xs text-muted">Touches graph nodes:</span>
+                {comps.map((c) => (
+                  <Link key={c} to={`/#node=${encodeURIComponent(c)}`}
+                    className="text-xs font-mono bg-border hover:bg-accent/30 px-2 py-0.5 rounded transition-colors">
+                    {c}
+                  </Link>
+                ))}
+              </div>
+            ) : null;
+          })()}
         </div>
       )}
     </div>
