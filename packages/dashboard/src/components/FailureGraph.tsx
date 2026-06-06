@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useLocation } from "react-router-dom";
 import ForceGraph2D from "react-force-graph-2d";
 import { apiFetch, wsUrl, type NetworkResponse, type PhoenixEvent } from "@/lib/api";
 import { toGraphData, diffNewNodeIds, scoreColor, type GraphData, type GraphNode } from "@/lib/graph";
 import NodeInspector from "./NodeInspector";
 
 export default function FailureGraph() {
+  const location = useLocation();
   const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(700);
   const [data, setData] = useState<GraphData>({ nodes: [], links: [] });
@@ -34,6 +36,14 @@ export default function FailureGraph() {
     idsRef.current = nextIds;
     setData(g);
   }, []);
+
+  // C2b: select the node for the component carried in the URL hash (?node=<component>)
+  useEffect(() => {
+    const param = new URLSearchParams(location.hash.replace(/^#/, "")).get("node");
+    if (!param) return;
+    const match = data.nodes.find((n) => n.affected_component === param);
+    if (match) setSelected(match);
+  }, [location.hash, data]);
 
   // FIX 3: cleanup freshTimerRef on unmount
   useEffect(() => () => {

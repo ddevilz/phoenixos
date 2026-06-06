@@ -26,9 +26,12 @@ export function diffNewNodeIds(prevIds: string[], nextIds: string[]): string[] {
 }
 
 export function neighborsOf(id: string, links: GraphLink[]): string[] {
-  return links
-    .filter((l) => l.source === id || l.target === id)
-    .map((l) => (l.source === id ? l.target : l.source));
+  const endId = (e: unknown): string =>
+    typeof e === "object" && e !== null ? (e as { id: string }).id : (e as string);
+  const out = links
+    .filter((l) => endId(l.source) === id || endId(l.target) === id)
+    .map((l) => (endId(l.source) === id ? endId(l.target) : endId(l.source)));
+  return [...new Set(out)];
 }
 
 export function scoreColor(score: number): string {

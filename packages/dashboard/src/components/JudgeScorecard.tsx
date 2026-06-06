@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { apiFetch, type AggregateScore, type JudgeResult } from "@/lib/api";
 import { extractComponents } from "@/lib/judges";
 
@@ -114,10 +115,10 @@ export default function JudgeScorecard() {
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 <span className="text-xs text-muted">Touches graph nodes:</span>
                 {comps.map((c) => (
-                  <a key={c} href={`/#node=${encodeURIComponent(c)}`}
+                  <Link key={c} to={`/#node=${encodeURIComponent(c)}`}
                     className="text-xs font-mono bg-border hover:bg-accent/30 px-2 py-0.5 rounded transition-colors">
                     {c}
-                  </a>
+                  </Link>
                 ))}
               </div>
             ) : null;

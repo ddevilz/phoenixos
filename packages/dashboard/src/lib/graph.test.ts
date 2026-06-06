@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { toGraphData, diffNewNodeIds } from "./graph";
+import { scoreColor } from "./graph";
 import type { NetworkResponse } from "./api";
 
 const net: NetworkResponse = {
@@ -28,4 +29,10 @@ describe("diffNewNodeIds", () => {
   it("returns empty when nothing new", () => {
     expect(diffNewNodeIds(["a", "b"], ["a", "b"])).toEqual([]);
   });
+});
+
+describe("scoreColor", () => {
+  it("red at >=0.7", () => expect(scoreColor(0.7)).toBe("#ef4444"));
+  it("amber at >=0.4 and <0.7", () => { expect(scoreColor(0.4)).toBe("#f59e0b"); expect(scoreColor(0.69)).toBe("#f59e0b"); });
+  it("green below 0.4", () => expect(scoreColor(0.39)).toBe("#22c55e"));
 });

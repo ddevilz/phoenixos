@@ -230,7 +230,7 @@ The **JudgeScorecard** renders after all three judges complete. Point out:
 - Aggregate trust score formula: `behavior × 0.4 + security × 0.4 + regression × 0.2`.
 - If the security judge flagged anything (SSRF / injection), the verdict is `block` regardless of the weighted score.
 
-> **Narration:** "The regression judge queried the graph for signatures whose `affected_component` overlaps the files changed in this PR. The chips you see are clickable — they navigate back to the exact graph node, closing the loop between the eval verdict and the failure history."
+> **Narration:** "The regression judge queried the graph for signatures whose `affected_component` overlaps the files changed in this PR. The chips you see are clickable — each one navigates to the Memory Graph and selects the graph node whose component matches the chip (matched by `affected_component`; if several signatures share a component, the first is selected), closing the loop between the eval verdict and the failure history."
 
 ---
 

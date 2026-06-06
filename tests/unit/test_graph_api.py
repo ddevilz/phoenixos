@@ -264,3 +264,17 @@ async def test_get_network_returns_503_when_neo4j_unavailable(client) -> None:
     with patch("core.api.graph.neo4j_session", side_effect=Exception("driver not ready")):
         r = await client.get("/api/graph/network")
     assert r.status_code == 503
+
+
+async def test_get_network_returns_empty_when_no_data(client) -> None:
+    empty = AsyncMock()
+    empty.data = AsyncMock(return_value=[])
+    mock_session = AsyncMock()
+    mock_session.run = AsyncMock(side_effect=[empty, empty])
+    mock_ctx = MagicMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+    with patch("core.api.graph.neo4j_session", return_value=mock_ctx):
+        r = await client.get("/api/graph/network")
+    assert r.status_code == 200
+    assert r.json() == {"nodes": [], "edges": []}
