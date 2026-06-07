@@ -153,8 +153,8 @@ export default function FailureGraph() {
 
           <div className="flex gap-4 text-xs text-muted">
             {[
-              { label: "High ≥0.65", color: "bg-block" },
-              { label: "Moderate 0.35–0.55", color: "bg-warn" },
+              { label: "High ≥0.75", color: "bg-block" },
+              { label: "Moderate 0.35–0.75", color: "bg-warn" },
               { label: "Stable <0.35", color: "bg-pass" },
             ].map((l) => (
               <span key={l.label} className="flex items-center gap-1.5">
