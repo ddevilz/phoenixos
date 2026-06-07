@@ -1,4 +1,6 @@
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -29,6 +31,13 @@ app.include_router(webhooks_router)
 app.include_router(graph_router)
 app.include_router(ws_router)
 app.include_router(evals_router)
+
+
+_static = Path(os.getenv("STATIC_DIR", "/app/static"))
+if _static.exists():
+    from fastapi.staticfiles import StaticFiles
+
+    app.mount("/", StaticFiles(directory=str(_static), html=True), name="spa")
 
 
 @app.get("/health")

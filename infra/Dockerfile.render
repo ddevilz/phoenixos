@@ -1,0 +1,28 @@
+# Stage 1 — build React dashboard
+FROM node:20-slim AS frontend
+WORKDIR /build
+
+RUN npm install -g pnpm
+
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY packages/dashboard packages/dashboard
+
+RUN pnpm install --frozen-lockfile
+RUN pnpm --filter @phoenixos/dashboard build
+
+# Stage 2 — Python API + static files
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN pip install uv
+
+COPY pyproject.toml uv.lock ./
+COPY packages/core packages/core
+
+RUN uv sync --no-dev
+
+# React build output served by FastAPI at /
+COPY --from=frontend /build/packages/dashboard/dist /app/static
+
+CMD ["uv", "run", "uvicorn", "core.main:app", "--host", "0.0.0.0", "--port", "8000"]
