@@ -1,128 +1,151 @@
-# PhoenixOS — Live Demo Runbook
+# PhoenixOS — Demo Guide
 
-This runbook walks through a live demo: push a breaking commit to a real GitHub repo → its Actions workflow fails → the webhook fires into a local PhoenixOS instance via a tunnel → the LangGraph pipeline runs → a node pulses into the FailureGraph dashboard → open a PR and run an eval so three judges score it live, with the regression judge's graph-link chips tying back to the graph.
+## What is PhoenixOS?
 
----
+PhoenixOS is a CI failure intelligence layer that sits between your GitHub Actions and your engineering team.
 
-## 1. Prerequisites
+Every time a CI run fails, PhoenixOS ingests the log, extracts a structured failure signature using an LLM (NVIDIA minimax-m2.7), embeds it into vector space (nv-embed-v1), and deduplicates it against everything that has ever failed before. Over time it builds a **memory graph** of your failure history — not a list of red builds, but a semantic map of *why* things break and what they affect.
 
-### Required environment variables
-
-Copy `infra/.env.example` to `.env` at the project root and fill in every value below.
-
-| Variable | Where it comes from | Required for |
-|---|---|---|
-| `NVIDIA_API_KEY` | [build.nvidia.com](https://build.nvidia.com) → API Keys | LLM extraction (minimax-m2.7) + embeddings (nv-embed-v1) |
-| `NVIDIA_BASE_URL` | Set to `https://integrate.api.nvidia.com/v1` | NIM base URL |
-| `GITHUB_WEBHOOK_SECRET` | A random string you choose — must match the secret you register on GitHub | HMAC signature verification on all incoming webhooks |
-| `GITHUB_TOKEN` | A GitHub PAT with `repo` and `read:org` scopes | Fetching changed files per commit SHA; optional for seed script |
-| `NEO4J_URI` | `bolt://localhost:7687` (local) | Core API → Neo4j connection |
-| `NEO4J_AUTH` | `none` | Neo4j auth (Community edition, no password) |
-| `SQLITE_PATH` | `./data/phoenix.db` | SQLite pipeline audit log |
-
-> **Note:** `infra/.env.example` shows `OPENAI_API_KEY` as a placeholder — that field is unused by the current pipeline. The real key you need is `NVIDIA_API_KEY`. When Docker Compose starts the `core` service it reads from `.env` at the project root (the `env_file: - ../.env` directive in `infra/docker-compose.yml`).
-
-### Tools
-
-| Tool | Version | Install |
-|---|---|---|
-| Docker + Docker Compose plugin | Docker Desktop 4.x or Docker Engine + Compose v2 | [docs.docker.com](https://docs.docker.com/get-docker/) |
-| `uv` | 0.4+ | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
-| Node.js + `pnpm` | Node 20+, pnpm 9+ | `npm i -g pnpm` |
-| Tunnel tool | `cloudflared` or `ngrok` | See note below |
-
-**Tunnel assumption:** The commands below use `cloudflared tunnel --url http://localhost:8000`. If you use `ngrok`, substitute `ngrok http 8000` — the resulting HTTPS URL is the same shape. Neither tool requires an account for a temporary URL; `cloudflared` quick tunnels work without login.
-
-### Demo repo
-
-A ready-made demo repo already exists: **https://github.com/ddevilz/phoenix-demo**. It has a real GitHub Actions test suite (green on `main`) plus `break.sh` / `reset.sh` to fail and restore it on cue. Clone it next to this project:
-
-```bash
-git clone https://github.com/ddevilz/phoenix-demo.git ~/Desktop/phoenix-demo
-```
-
-Section 3 documents its layout. (If you'd rather build your own, the same structure works.)
+On top of that memory graph, it scores every incoming pull request through three judges before the code merges.
 
 ---
 
-## 2. Startup order
+## How it helps
 
-Run each step in a separate terminal tab and wait for each to be ready before proceeding.
+| Without PhoenixOS | With PhoenixOS |
+|---|---|
+| PR merges, breaks prod, team scrambles | PR scored before merge — regression risk surfaced inline |
+| Same bug pattern recurs across sprints | Failure deduplicated on first occurrence; future hits increment the counter |
+| "This has happened before" — no one knows where | Memory Graph shows the exact prior failure node, its history, and what else it touched |
+| AI-generated code merges silently | Trust Ledger records provenance; bot-authored code flagged with its own eval chain |
 
-### Step 1 — Start Neo4j + core API
+---
+
+## The five panels
+
+### Memory Graph
+The live view of every failure PhoenixOS has seen. Each node is a `FailureSignature` — a deduplicated, LLM-extracted record of a failure pattern. Nodes are colored by **fragility score** (PageRank over the similarity graph):
+
+- 🔴 **Red ≥ 0.7** — high fragility, frequently fails or deeply connected
+- 🟡 **Amber 0.4–0.7** — moderate, worth watching
+- 🟢 **Green < 0.4** — stable, isolated
+
+Edges (`SIMILAR_TO`) connect signatures whose embeddings land within cosine 0.80–0.92. A cosine ≥ 0.92 is an exact duplicate — the counter increments, no new node. Below 0.80 is a novel failure — new node, no edge.
+
+Click any node to open the inspector: **Overview** (summary, component, occurrence count) → **Neighbors** (similar failures with cosine scores) → **Flakiness** (rolling trend over 28 days) → **Blast Radius** (components transitively at risk).
+
+### Evals
+Paste a PR URL or a raw diff and click **Run Eval**. Three judges run in parallel:
+
+| Judge | What it checks | Weight |
+|---|---|---|
+| **Behavior** | Contract breaks, missing test coverage, return-type shifts | 40% |
+| **Security** | SSRF, injection, hardcoded secrets, OWASP Top 10 | 40% |
+| **Regression** | Matches past failures in the Memory Graph, touches high-fragility components | 20% |
+
+Trust score = `behavior × 0.4 + security × 0.4 + regression × 0.2`. Security `block` overrides the weighted score regardless. The Regression judge outputs clickable graph-link chips — each chip navigates to the exact Memory Graph node that matches the changed component, closing the loop between the eval verdict and the failure history.
+
+### Intent Compiler
+Takes a natural-language feature request and compiles it into a formal spec: **preconditions**, **invariants**, **postconditions**, **edge cases**. The goal is to catch ambiguity before code is written, not after it breaks. The live version diffs the compiled spec against the actual implementation at PR creation time.
+
+*Example: "Add rate limiting to /api/evals/run, max 10 req/min per IP" → spec with sliding-window invariant, 429 + Retry-After postcondition, shared-NAT edge case.*
+
+### Behavior Twin
+Given the files changed in a PR, the Behavior Twin walks the Memory Graph to find every component transitively at risk. It returns a ranked list with fragility scores and reasons ("imports auth.validate_token", "shares DB connection pool"). This is the blast radius view — what could break if this PR has a bug.
+
+*Backed by `POST /api/graph/blast-radius` — the same traversal the Regression judge runs internally.*
+
+### Trust Ledger
+An immutable, time-ordered provenance chain of every eval result: PR URL, timestamp, author, per-judge scores, flags, and final verdict. Bot-authored code (GitHub Copilot, etc.) appears with its own `author` tag so AI-generated changes are never anonymous in the audit trail.
+
+---
+
+## Running the demo
+
+### Prerequisites
+
+Copy `infra/.env.example` to `.env` at the project root. Required variables:
+
+| Variable | Value |
+|---|---|
+| `NVIDIA_API_KEY` | From [build.nvidia.com](https://build.nvidia.com) → API Keys |
+| `NVIDIA_BASE_URL` | `https://integrate.api.nvidia.com/v1` |
+| `GITHUB_WEBHOOK_SECRET` | Any random string — must match the GitHub webhook secret |
+| `NEO4J_URI` | `bolt://localhost:7687` |
+| `NEO4J_AUTH` | `none` |
+| `SQLITE_PATH` | `./data/phoenix.db` |
+
+Tools needed: Docker, `uv`, Node.js + `pnpm`, `cloudflared` or `ngrok`.
+
+---
+
+### Step 1 — Start the stack
 
 ```bash
-# From the project root
 docker compose -f infra/docker-compose.yml up --build
 ```
 
-Neo4j takes ~30 s on cold start. The `core` service waits for Neo4j's healthcheck before starting. Watch for the uvicorn startup line:
-
+Wait for:
 ```
 INFO:     Application startup complete.
 ```
 
-### Step 2 — Confirm /health
-
+Confirm Neo4j is ready:
 ```bash
 curl -s http://localhost:8000/health
+# → {"status": "ok", "neo4j": "ok"}
 ```
 
-Expected response:
+---
 
-```json
-{"status": "ok", "neo4j": "ok"}
-```
-
-Do not proceed until `neo4j` is `"ok"`. If it shows `"pending"`, Neo4j is still initialising — wait 10 s and retry.
-
-### Step 3 — Seed the baseline graph
-
-The seed script ingests 22 synthetic failure signatures across four categories (`test_failure`, `build_error`, `contract_violation`, `flaky`), waits 30 s for background extraction tasks, then writes three `SUPPRESSED_BY` fix chains.
+### Step 2 — Seed the baseline graph
 
 ```bash
-# From the project root
-GITHUB_TOKEN=ghp_... PHOENIX_API_URL=http://localhost:8000 uv run scripts/seed_demo.py
+GITHUB_WEBHOOK_SECRET=<your-secret> uv run scripts/seed_demo.py
 ```
 
-`GITHUB_TOKEN` is optional; without it the script skips the live GitHub fetch and uses only synthetic data (still produces the full seeded graph). Seeding takes roughly 2–4 minutes because each event triggers two NVIDIA NIM calls (extraction + embedding) with a 2 s throttle between events.
-
-### Step 4 — Start the dashboard
+Seeds 22 synthetic failure signatures across `test_failure`, `build_error`, `contract_violation`, and `flaky` categories. Takes ~2–4 minutes (two NIM calls per event: extraction + embedding, 2 s throttle). After seeding, trigger fragility recompute:
 
 ```bash
-# From the project root
+curl -s -X POST http://localhost:8000/api/graph/fragility/recompute
+```
+
+The graph now has varied node colors — red, amber, and green nodes with `SIMILAR_TO` edges.
+
+---
+
+### Step 3 — Start the dashboard
+
+```bash
 pnpm --filter @phoenixos/dashboard dev
 ```
 
-Dashboard available at **http://localhost:3000**. The Vite dev server proxies `/api` and `/ws` to `localhost:8000`, so no CORS configuration is needed.
+Open **http://localhost:3000**.
 
-### Step 5 — Start the tunnel
+---
+
+### Step 4 — Start the tunnel
 
 ```bash
-# Option A — cloudflared (no account needed for a quick tunnel)
 cloudflared tunnel --url http://localhost:8000
-
-# Option B — ngrok
-ngrok http 8000
 ```
 
-Both tools print a public HTTPS URL, e.g. `https://abc123.trycloudflare.com`. Copy it — you need it in the next step.
+Copy the printed HTTPS URL (e.g. `https://abc123.trycloudflare.com`).
 
-### Step 6 — Register the webhook on GitHub
+---
 
-In your demo repo on GitHub: **Settings → Webhooks → Add webhook**
+### Step 5 — Register the GitHub webhook
+
+On **https://github.com/ddevilz/phoenix-demo** → Settings → Webhooks → Add webhook:
 
 | Field | Value |
 |---|---|
-| Payload URL | `<tunnel-url>/api/webhooks/github` (e.g. `https://abc123.trycloudflare.com/api/webhooks/github`) |
+| Payload URL | `<tunnel-url>/api/webhooks/github` |
 | Content type | `application/json` |
-| Secret | The value of `GITHUB_WEBHOOK_SECRET` in your `.env` |
-| Which events | Select **Workflow runs** only |
+| Secret | Value of `GITHUB_WEBHOOK_SECRET` |
+| Events | Workflow runs only |
 
-Click **Add webhook**. GitHub will send a ping event; the core API returns 200 and logs it.
-
-**Faster (CLI, no clicking)** — register the webhook on `ddevilz/phoenix-demo` in one command once the tunnel URL is known:
-
+Or via CLI:
 ```bash
 gh api repos/ddevilz/phoenix-demo/hooks -X POST \
   -f name=web -F active=true -f 'events[]=workflow_run' \
@@ -131,141 +154,76 @@ gh api repos/ddevilz/phoenix-demo/hooks -X POST \
   -f config[secret]="$GITHUB_WEBHOOK_SECRET"
 ```
 
-To update the URL on a later tunnel restart: `gh api repos/ddevilz/phoenix-demo/hooks` to list (grab the hook `id`), then `gh api repos/ddevilz/phoenix-demo/hooks/<id> -X PATCH -f config[url]="<new-url>/api/webhooks/github" -f config[content_type]=json -f config[secret]="$GITHUB_WEBHOOK_SECRET"`.
-
-> **Why this path?** The webhook router is mounted at prefix `/api/webhooks` (see `packages/core/api/webhooks.py` line 19) and the POST endpoint is `/github` (line 57). The full path is therefore `/api/webhooks/github`.
-
 ---
 
-## 3. Demo repo setup (`ddevilz/phoenix-demo`)
+### The live demo beats
 
-The repo at **https://github.com/ddevilz/phoenix-demo** is ready to use.
-
-### Layout
-
-```
-phoenix-demo/
-├── .github/workflows/ci.yml   # runs pytest on every push / PR
-├── src/transfer.py            # transfer layer with a 30s budget
-├── tests/test_transfer.py     # asserts elapsed <= 30s
-├── break.sh                   # introduce the regression + push (run LIVE)
-└── reset.sh                   # restore green to re-run the demo
-```
-
-### How it fails on cue
-
-`main` is green: `simulate_transfer()` returns `12` (≤ 30s budget). `break.sh` flips that return to `42` and pushes, so the test fails with:
-
-```
-transfer timeout regression: elapsed exceeded 30s budget
-```
-
-That message is deliberately **timeout-themed** — PhoenixOS extracts a signature whose embedding lands next to the seeded `curl/curl` `lib/transfer.c` timeout cluster, so the new node arrives **with a real `SIMILAR_TO` edge** and a populated blast radius rather than floating alone.
-
-### One-time prep
-
-```bash
-git clone https://github.com/ddevilz/phoenix-demo.git ~/Desktop/phoenix-demo
-```
-
-No editing needed. Just keep this checkout handy; you run `break.sh` during the demo.
-
----
-
-## 4. Live script (the actual demo)
-
-### Beat 1 — Push the breaking commit (~0:00)
+**Beat 1 — Push the breaking commit (0:00)**
 
 ```bash
 cd ~/Desktop/phoenix-demo && ./break.sh
 ```
 
-`break.sh` introduces the regression, commits, and pushes to `main`. GitHub Actions picks it up immediately. The workflow runs, the test fails, and the `workflow_run` webhook fires with `action: completed` and `conclusion: failure`.
+This injects three simultaneous regressions:
+- `src/transfer.py` — timeout regression (elapsed 42s > 30s budget)
+- `src/connection.py` — pool limit set to 0 (all acquire() calls throw)
+- `src/auth.py` — HMAC prefix corrupted (`sha1=` instead of `sha256=`)
 
-> After the demo, run `./reset.sh` to restore green so you can replay.
+20 tests, multiple failures, rich log output for NIM to extract from.
 
-### Beat 2 — Watch the LiveFeed ticker (~0:30–1:00)
+> After the demo: `./reset.sh` restores green for replay.
 
-In the dashboard, open the **LiveFeed** panel (bottom of the screen or sidebar). You will see three events arrive in sequence over ~30–60 seconds:
+**Beat 2 — Watch the Live Feed (0:30–1:00)**
 
+In the dashboard, watch the Live Feed ticker. Events arrive in order:
 ```
 pipeline_started       run_id: …
-signature_extracted    category: test_failure, component: …
-graph_updated          node_id: …, node_type: FailureSignature
+signature_extracted    category: test_failure, component: src/transfer.py
+graph_updated          node_id: …
 ```
 
-> **Narration:** "The pipeline is making two NVIDIA NIM calls — one to minimax-m2.7 to extract the structured failure signature from the log, and one to nv-embed-v1 to get a 4096-dimension embedding for dedup and similarity search. That's why it takes 30–60 seconds, not instant."
+> "The pipeline makes two NVIDIA NIM calls per failure — minimax-m2.7 extracts the structured signature, nv-embed-v1 embeds it in 4096-dimensional space for dedup. That's the 30–60 second latency."
 
-The status dot in the LiveFeed header is orange (live/connected to WebSocket). If it is grey, the WebSocket connection to `localhost:8000/ws/events` dropped — see Troubleshooting.
+**Beat 3 — Node pulses into the graph (1:00)**
 
-### Beat 3 — Node pulses into the graph (~1:00)
+Switch to the Memory Graph tab. The new node pulses in and is auto-selected. It's colored by fragility score — a fresh node starts green, rises to amber or red as it accumulates connections and recurrences.
 
-After the `graph_updated` event, switch to the **FailureGraph** tab. The new node pulses (brief scale animation) and is auto-selected. The node is coloured by fragility score: grey (new, low score) through amber to red (high fragility).
+**Beat 4 — Walk the inspector (1:00–2:00)**
 
-### Beat 4 — Walk the inspector tabs (~1:00–2:00)
+Click the node. Show all four tabs: Overview → Neighbors → Flakiness → Blast Radius.
 
-Click the node. The right-side inspector opens with four tabs:
+> "Neighbors shows `SIMILAR_TO` edges — these are failures that embedded within cosine 0.80–0.92 of this one. The score in the edge label is the raw cosine similarity. This is how PhoenixOS knows a new `src/connection.py` pool exhaustion is related to the seeded `lib/openssl.c` TLS failure — both are auth/transport layer failures, semantically."
 
-| Tab | What to show |
-|---|---|
-| **Overview** | `summary`, `category`, `affected_component`, `occurrence_count`, `first_seen` / `last_seen` |
-| **Neighbors** | `SIMILAR_TO` edges to related signatures; edge labels show cosine similarity (0.80–0.92 range) |
-| **Flakiness** | Rolling 7-run slope — useful if this pattern has appeared before |
-| **Blast radius** | Components transitively at risk via `SIMILAR_TO` traversal |
+**Beat 5 — Run an eval (2:00–3:00)**
 
-> **Narration:** "Every new failure is deduplicated in embedding space. Cosine ≥ 0.92 = exact duplicate (counter increments, no new node). 0.80–0.92 = similar (new node + SIMILAR_TO edge). Below 0.80 = novel failure. This node got a SIMILAR_TO edge to the seeded `lib/transfer.c` timeout signature because the test message is semantically close."
+Navigate to **Evals**. Paste the `break.sh` diff or the PR URL. Click **Run Eval**. Three judges run in parallel.
 
-### Beat 5 — Run an eval (~2:00–3:00)
+**Beat 6 — JudgeScorecard (3:00–3:30)**
 
-In the dashboard, navigate to **Evals** (top nav). Two ways to feed it:
-
-- **Open a PR**: instead of `break.sh` (which pushes to `main`), make the same regression on a branch and open a PR to `main`, then paste the PR URL into the eval input. Best for the full story.
-- **Paste a diff**: skip GitHub entirely — paste the `break.sh` diff (the `return 12` → `return 42` change in `src/transfer.py`) straight into the diff box. Fastest, no network dependency.
-
-Click **Run Eval**.
-
-The three judges run in parallel (asyncio.gather):
-
-| Judge | What it checks |
-|---|---|
-| **Behavior** | Contract breaks, missing test coverage |
-| **Security** | SSRF, injection, hardcoded secrets |
-| **Regression** | Matches past failures, touches high-fragility components |
-
-### Beat 6 — JudgeScorecard results (~3:00–3:30)
-
-The **JudgeScorecard** renders after all three judges complete. Point out:
-
-- The **Regression judge** section shows graph-link chips labelled `Touches graph nodes: <node-id>` — these link directly back to the FailureSignature nodes in the graph.
-- Aggregate trust score formula: `behavior × 0.4 + security × 0.4 + regression × 0.2`.
-- If the security judge flagged anything (SSRF / injection), the verdict is `block` regardless of the weighted score.
-
-> **Narration:** "The regression judge queried the graph for signatures whose `affected_component` overlaps the files changed in this PR. The chips you see are clickable — each one navigates to the Memory Graph and selects the graph node whose component matches the chip (matched by `affected_component`; if several signatures share a component, the first is selected), closing the loop between the eval verdict and the failure history."
+Point out:
+- Regression judge shows graph-link chips → click one → Memory Graph selects that node
+- Trust score formula at the bottom
+- If security flagged anything → verdict is `block` regardless of weighted score
 
 ---
 
-## 5. Fallback
+### Fallback (if webhook doesn't arrive)
 
-If the tunnel goes down, GitHub Actions is flaky, or the webhook does not arrive mid-demo, replay the graph population live:
+Re-run the seed script. It re-ingests all 22 events and nodes pulse into the dashboard in real time — visually identical to the live webhook path.
 
 ```bash
-GITHUB_TOKEN=ghp_... PHOENIX_API_URL=http://localhost:8000 uv run scripts/seed_demo.py
+GITHUB_WEBHOOK_SECRET=<your-secret> uv run scripts/seed_demo.py
 ```
-
-This re-ingests all 22 synthetic events and re-runs the pipeline for each. The graph will repopulate and nodes will pulse into the dashboard in real time — the visual effect is identical to the live webhook path.
-
-The dashboard's LiveFeed header dot shows **green/orange = live** (WebSocket connected to the running core API) and **grey = offline** (disconnected). You can narrate this dot as the "heartbeat" indicator. Even in offline mode, previously written graph data is still queryable from Neo4j, so the FailureGraph, inspector tabs, and Evals all work.
 
 ---
 
-## 6. Troubleshooting
+## Troubleshooting
 
-| Symptom | Likely cause | Fix |
-|---|---|---|
-| Webhook returns **401 Unauthorized** | `GITHUB_WEBHOOK_SECRET` mismatch — the value in `.env` does not match the secret registered on GitHub | Re-check `.env` → `GITHUB_WEBHOOK_SECRET`; update the GitHub webhook secret to match; or temporarily clear the secret in `.env` (the code skips HMAC if the variable is empty) |
-| Node never appears in FailureGraph after ~90 s | `NVIDIA_API_KEY` invalid or rate-limited, or the pipeline timed out | Check core container logs: `docker compose -f infra/docker-compose.yml logs core --tail 50`; look for `401` or `429` from NIM; verify `NVIDIA_API_KEY` in `.env` |
-| Graph is empty / no nodes render | Neo4j not ready, or seed not run | Confirm `/health` returns `neo4j: "ok"`; run the seed script (Section 2, Step 3) |
-| Dashboard shows **"Graph unavailable"** | Core API down, or `VITE_API_URL` / Vite proxy misconfigured | Ensure `docker compose up` is running and `http://localhost:8000/health` responds; the Vite proxy config in `packages/dashboard/vite.config.ts` forwards `/api` and `/ws` to `localhost:8000` — if you changed the core port you must update the proxy target |
-| LiveFeed dot is grey (offline) | WebSocket connection to `ws://localhost:8000/ws/events` dropped | Restart the dashboard (`pnpm --filter @phoenixos/dashboard dev`); ensure the core service is running and not restarting |
-| Seed script exits with `API not reachable` | Core API not yet started | Start Docker Compose first (Step 1); wait for `/health` to return `neo4j: ok` before running the seed |
-| Tunnel URL changes between demo sections | `cloudflared` quick tunnels generate a new URL on restart | Use a named tunnel (requires a Cloudflare account) or keep the same terminal open; if the URL changes, update the GitHub webhook Payload URL in repo Settings |
+| Symptom | Fix |
+|---|---|
+| Webhook 401 | `GITHUB_WEBHOOK_SECRET` in `.env` doesn't match GitHub webhook secret — update one or the other |
+| Node never appears after 90s | Check core logs: `docker compose logs core --tail 50` — look for NIM 401/429; verify `NVIDIA_API_KEY` |
+| All nodes same color | Run `curl -s -X POST http://localhost:8000/api/graph/fragility/recompute` |
+| Graph empty | Confirm `/health` shows `neo4j: ok`, then run seed script |
+| Live Feed dot grey | WebSocket dropped — restart dashboard (`pnpm --filter @phoenixos/dashboard dev`) |
+| Tunnel URL changed | Update GitHub webhook: `gh api repos/ddevilz/phoenix-demo/hooks/<id> -X PATCH -f config[url]="<new-url>/api/webhooks/github" -f config[content_type]=json -f config[secret]="$GITHUB_WEBHOOK_SECRET"` |
