@@ -33,13 +33,6 @@ app.include_router(ws_router)
 app.include_router(evals_router)
 
 
-_static = Path(os.getenv("STATIC_DIR", "/app/static"))
-if _static.exists():
-    from fastapi.staticfiles import StaticFiles
-
-    app.mount("/", StaticFiles(directory=str(_static), html=True), name="spa")
-
-
 @app.get("/health")
 async def health():
     neo4j_status = "pending"
@@ -52,3 +45,16 @@ async def health():
         except Exception:
             neo4j_status = "error"
     return {"status": "ok", "neo4j": neo4j_status}
+
+
+# Static assets (JS/CSS/images) served directly
+_static = Path(os.getenv("STATIC_DIR", "/app/static"))
+if _static.exists():
+    from fastapi.responses import FileResponse
+    from fastapi.staticfiles import StaticFiles
+
+    app.mount("/assets", StaticFiles(directory=str(_static / "assets")), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        return FileResponse(str(_static / "index.html"))

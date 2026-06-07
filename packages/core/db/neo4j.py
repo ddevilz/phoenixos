@@ -12,11 +12,19 @@ async def init_driver() -> None:
     global _driver
     uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
     auth_env = os.getenv("NEO4J_AUTH", "none")
+
     if auth_env == "none":
         auth: tuple[str, str] | None = None
-    else:
+    elif "/" in auth_env:
+        # combined format: "user/password"
         user, password = auth_env.split("/", 1)
         auth = (user, password)
+    else:
+        # separate env vars (Aura credentials file format)
+        user = os.getenv("NEO4J_USERNAME", "neo4j")
+        password = os.getenv("NEO4J_PASSWORD", "")
+        auth = (user, password) if password else None
+
     _driver = AsyncGraphDatabase.driver(uri, auth=auth)
 
 
