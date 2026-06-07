@@ -4,9 +4,17 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def _basenames(files: list[str]) -> list[str]:
+    import os
+
+    return list({os.path.basename(f) for f in files} | set(files))
+
+
 async def get_blast_radius(changed_files: list[str], session: Any) -> dict[str, Any]:
     if not changed_files:
         return {"at_risk": [], "fragility_scores": {}}
+    # match both full paths and basenames so pool.py matches src/db/pool.py
+    candidates = _basenames(changed_files)
     try:
         direct_result = await session.run(
             """
@@ -15,7 +23,7 @@ async def get_blast_radius(changed_files: list[str], session: Any) -> dict[str, 
             RETURN s.affected_component AS component,
                    coalesce(s.fragility_score, 0.0) AS fragility_score
             """,
-            changed_files=changed_files,
+            changed_files=candidates,
         )
         direct_records = await direct_result.data()
 
@@ -27,7 +35,7 @@ async def get_blast_radius(changed_files: list[str], session: Any) -> dict[str, 
             RETURN related.affected_component AS component,
                    coalesce(related.fragility_score, 0.0) AS fragility_score
             """,
-            changed_files=changed_files,
+            changed_files=candidates,
         )
         similar_records = await similar_result.data()
 
