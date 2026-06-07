@@ -9,28 +9,26 @@ const VERDICT_STYLES = {
   block: "bg-block/10 text-block border-block/30",
 };
 
-const SCORE_BAR = {
-  pass: "bg-pass",
-  warn: "bg-warn",
-  block: "bg-block",
-};
+const SCORE_BAR = { pass: "bg-pass", warn: "bg-warn", block: "bg-block" };
+
+const SCORE_COLOR = (pct: number) =>
+  pct >= 70 ? "#4ade80" : pct >= 40 ? "#facc15" : "#f87171";
 
 function JudgeCard({ r }: { r: JudgeResult }) {
-  const [expanded, setExpanded] = useState(false);
   const verdict = r.verdict as keyof typeof VERDICT_STYLES;
   const pct = Math.round(r.score * 100);
   const cleanFlags = r.flags.filter((f) => f && f !== "judge_timeout");
 
   return (
-    <div className="bg-panel border border-border rounded-lg p-4 space-y-3">
-      {/* header row */}
+    <div className="bg-panel border border-border rounded-xl p-5 space-y-4">
+      {/* header */}
       <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold capitalize tracking-wide">{r.judge}</span>
-        <div className="flex items-center gap-2">
-          <span className="text-lg font-bold tabular-nums" style={{ color: pct >= 70 ? "#4ade80" : pct >= 40 ? "#facc15" : "#f87171" }}>
+        <span className="text-base font-semibold capitalize">{r.judge}</span>
+        <div className="flex items-center gap-3">
+          <span className="text-2xl font-bold tabular-nums" style={{ color: SCORE_COLOR(pct) }}>
             {pct}
           </span>
-          <span className={`text-xs px-2 py-0.5 rounded border ${VERDICT_STYLES[verdict] ?? "text-muted border-border"}`}>
+          <span className={`text-xs px-2.5 py-1 rounded-md border font-medium ${VERDICT_STYLES[verdict] ?? "text-muted border-border"}`}>
             {r.verdict}
           </span>
         </div>
@@ -39,37 +37,24 @@ function JudgeCard({ r }: { r: JudgeResult }) {
       {/* score bar */}
       <div className="h-1.5 bg-border rounded-full overflow-hidden">
         <div
-          className={`h-full rounded-full transition-all ${SCORE_BAR[verdict] ?? "bg-muted"}`}
+          className={`h-full rounded-full ${SCORE_BAR[verdict] ?? "bg-muted"}`}
           style={{ width: `${pct}%` }}
         />
       </div>
 
-      {/* reasoning */}
+      {/* full reasoning — no clamp */}
       {r.reasoning && (
-        <div className="text-xs text-gray-400 leading-relaxed">
-          <p className={expanded ? "" : "line-clamp-3"}>{r.reasoning}</p>
-          {r.reasoning.length > 160 && (
-            <button
-              onClick={() => setExpanded((e) => !e)}
-              className="text-accent text-xs mt-1 hover:underline"
-            >
-              {expanded ? "show less" : "show more"}
-            </button>
-          )}
-        </div>
+        <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">{r.reasoning}</p>
       )}
 
-      {/* flags */}
+      {/* flags — full text, wrap */}
       {cleanFlags.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 pt-1">
+        <div className="space-y-1.5 border-t border-border pt-4">
+          <p className="text-xs text-muted uppercase tracking-wider mb-2">Flags</p>
           {cleanFlags.map((f) => (
-            <span
-              key={f}
-              title={f}
-              className="text-xs bg-surface border border-border px-2 py-0.5 rounded font-mono max-w-full truncate"
-            >
-              {f.length > 48 ? f.slice(0, 48) + "…" : f}
-            </span>
+            <div key={f} className="text-xs font-mono bg-surface border border-border rounded-lg px-3 py-2 text-gray-300 break-all leading-relaxed">
+              {f}
+            </div>
           ))}
         </div>
       )}
@@ -107,28 +92,28 @@ export default function JudgeScorecard() {
   const trustPct = result ? Math.round(result.trust_score * 100) : null;
 
   return (
-    <div className="space-y-5">
-      {/* input form */}
-      <div className="bg-panel border border-border rounded-lg p-4 space-y-3">
+    <div className="space-y-6">
+      {/* input */}
+      <div className="bg-panel border border-border rounded-xl p-5 space-y-3">
         <input
           type="text"
           placeholder="GitHub PR URL — https://github.com/owner/repo/pull/123"
           value={prUrl}
           onChange={(e) => setPrUrl(e.target.value)}
-          className="w-full bg-surface border border-border rounded px-3 py-2 text-sm text-gray-200 placeholder:text-muted focus:outline-none focus:border-accent"
+          className="w-full bg-surface border border-border rounded-lg px-3 py-2.5 text-sm text-gray-200 placeholder:text-muted focus:outline-none focus:border-accent"
         />
         <p className="text-xs text-muted text-center">— or paste diff directly —</p>
         <textarea
           placeholder="diff --git a/src/auth.py ..."
           value={diff}
           onChange={(e) => setDiff(e.target.value)}
-          rows={4}
-          className="w-full bg-surface border border-border rounded px-3 py-2 text-xs font-mono text-gray-300 placeholder:text-muted focus:outline-none focus:border-accent resize-none"
+          rows={5}
+          className="w-full bg-surface border border-border rounded-lg px-3 py-2.5 text-xs font-mono text-gray-300 placeholder:text-muted focus:outline-none focus:border-accent resize-y"
         />
         <button
           onClick={run}
           disabled={loading || (!prUrl && !diff)}
-          className="w-full py-2 bg-accent hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed rounded text-sm font-medium transition-colors"
+          className="w-full py-2.5 bg-accent hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-sm font-medium transition-colors"
         >
           {loading ? "Running judges…" : "Run Eval"}
         </button>
@@ -137,29 +122,27 @@ export default function JudgeScorecard() {
 
       {/* results */}
       {result && (
-        <div className="space-y-4">
-          {/* trust score summary */}
-          <div className={`flex items-center gap-6 p-5 rounded-lg border ${VERDICT_STYLES[verdict ?? "warn"]}`}>
+        <div className="space-y-5">
+          {/* trust summary */}
+          <div className={`flex items-center gap-6 p-6 rounded-xl border ${VERDICT_STYLES[verdict ?? "warn"]}`}>
             <div>
-              <p className="text-xs uppercase tracking-wider opacity-70 mb-0.5">Trust Score</p>
-              <p className="text-5xl font-bold tabular-nums">{trustPct}</p>
+              <p className="text-xs uppercase tracking-widest opacity-60 mb-1">Trust Score</p>
+              <p className="text-6xl font-bold tabular-nums">{trustPct}</p>
             </div>
-            <div className="flex-1">
-              <div className="h-2 bg-black/20 rounded-full overflow-hidden mb-2">
+            <div className="flex-1 space-y-2">
+              <div className="h-2 bg-black/20 rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full ${SCORE_BAR[verdict ?? "warn"]}`}
                   style={{ width: `${trustPct}%` }}
                 />
               </div>
-              <p className="text-xs opacity-70">
-                behavior×0.4 + security×0.4 + regression×0.2
-              </p>
+              <p className="text-xs opacity-60">behavior × 0.4 + security × 0.4 + regression × 0.2</p>
             </div>
-            <span className="text-2xl font-bold uppercase tracking-widest">{result.verdict}</span>
+            <span className="text-3xl font-bold uppercase tracking-widest">{result.verdict}</span>
           </div>
 
-          {/* judge cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {/* judge cards — vertical stack, full width */}
+          <div className="space-y-4">
             {result.judge_results.map((r) => <JudgeCard key={r.judge} r={r} />)}
           </div>
 
@@ -170,11 +153,8 @@ export default function JudgeScorecard() {
               <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-border">
                 <span className="text-xs text-muted">Touches graph nodes:</span>
                 {comps.map((c) => (
-                  <Link
-                    key={c}
-                    to={`/#node=${encodeURIComponent(c)}`}
-                    className="text-xs font-mono bg-border hover:bg-accent/30 px-2 py-0.5 rounded transition-colors"
-                  >
+                  <Link key={c} to={`/#node=${encodeURIComponent(c)}`}
+                    className="text-xs font-mono bg-border hover:bg-accent/30 px-2 py-0.5 rounded transition-colors">
                     {c}
                   </Link>
                 ))}

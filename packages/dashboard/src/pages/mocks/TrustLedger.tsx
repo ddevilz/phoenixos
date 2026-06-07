@@ -33,6 +33,9 @@ function TrustBar({ score }: { score: number }) {
 function EvalCard({ entry }: { entry: EvalEntry }) {
   const cfg = VERDICT_CONFIG[entry.verdict] ?? VERDICT_CONFIG.warn;
   const cleanFlags = entry.flags?.filter(Boolean) ?? [];
+  const flagStyle = entry.verdict === "pass"
+    ? "bg-warn/10 text-warn border-warn/20"
+    : "bg-block/10 text-block border-block/20";
   const when = entry.evaluated_at ? new Date(entry.evaluated_at).toLocaleString() : null;
   const repoSlug = entry.pr_url && entry.pr_url !== "(raw diff)"
     ? entry.pr_url.replace("https://github.com/", "")
@@ -77,17 +80,14 @@ function EvalCard({ entry }: { entry: EvalEntry }) {
         </div>
       )}
 
-      {/* flags */}
+      {/* flags — full text, no truncation */}
       {cleanFlags.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 border-t border-border pt-3">
-          {cleanFlags.slice(0, 4).map((f) => (
-            <span key={f} title={f} className="text-xs font-mono bg-block/10 text-block border border-block/20 px-2 py-0.5 rounded truncate max-w-xs">
-              {f.length > 40 ? f.slice(0, 40) + "…" : f}
-            </span>
+        <div className="space-y-1.5 border-t border-border pt-3">
+          {cleanFlags.map((f) => (
+            <div key={f} className={`text-xs font-mono border rounded-lg px-3 py-2 break-all leading-relaxed ${flagStyle}`}>
+              {f}
+            </div>
           ))}
-          {cleanFlags.length > 4 && (
-            <span className="text-xs text-muted">+{cleanFlags.length - 4} more</span>
-          )}
         </div>
       )}
     </div>

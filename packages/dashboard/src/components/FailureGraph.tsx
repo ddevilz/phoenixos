@@ -113,7 +113,7 @@ export default function FailureGraph() {
         <>
           <div className="flex items-center gap-4 text-xs text-muted">
             <span><b className="text-gray-200">{data.nodes.length}</b> signatures</span>
-            <span><span className="inline-block w-2 h-2 rounded-full bg-block mr-1" /><b className="text-gray-200">{data.nodes.filter((n) => n.score >= 0.7).length}</b> fragile</span>
+            <span><span className="inline-block w-2 h-2 rounded-full bg-block mr-1" /><b className="text-gray-200">{data.nodes.filter((n) => n.score >= 0.55).length}</b> fragile</span>
             <span className="ml-auto flex items-center gap-1.5">
               <span className={`w-2 h-2 rounded-full ${live ? "bg-pass animate-pulse" : "bg-muted"}`} />
               {live ? "live" : "offline"}
@@ -153,9 +153,9 @@ export default function FailureGraph() {
 
           <div className="flex gap-4 text-xs text-muted">
             {[
-              { label: "High ≥0.7", color: "bg-block" },
-              { label: "Moderate 0.4–0.7", color: "bg-warn" },
-              { label: "Stable <0.4", color: "bg-pass" },
+              { label: "High ≥0.55", color: "bg-block" },
+              { label: "Moderate 0.35–0.55", color: "bg-warn" },
+              { label: "Stable <0.35", color: "bg-pass" },
             ].map((l) => (
               <span key={l.label} className="flex items-center gap-1.5">
                 <span className={`w-2.5 h-2.5 rounded-full ${l.color} inline-block`} />
