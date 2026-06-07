@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 _BASE_URL = os.environ.get("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
 _API_KEY = os.environ.get("NVIDIA_API_KEY", "")
 _MODEL = "minimaxai/minimax-m2.7"
-_JUDGE_TIMEOUT = 10.0
+_JUDGE_TIMEOUT = 90.0
 
 _client: AsyncOpenAI | None = None
 
@@ -34,7 +34,7 @@ async def _stream_text(messages: list[dict[str, Any]]) -> str:
         messages=messages,  # type: ignore[arg-type]
         temperature=0.2,
         top_p=0.95,
-        max_tokens=8192,
+        max_tokens=1024,
         stream=True,
     )
     async for chunk in stream:  # type: ignore[union-attr]
