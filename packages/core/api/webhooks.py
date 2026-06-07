@@ -1,4 +1,5 @@
 # packages/core/api/webhooks.py
+import asyncio
 import hashlib
 import hmac
 import json
@@ -40,6 +41,38 @@ async def _get_changed_files(repo: str, sha: str) -> list[str]:
         return []
 
 
+async def _get_run_log_tail(repo: str, run_id: str) -> str:
+    """Fetch last 2000 chars of the first failed job's log for the given run."""
+    token = os.getenv("GITHUB_TOKEN", "")
+    if not token:
+        return ""
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            jobs_r = await client.get(
+                f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/jobs",
+                headers=headers,
+            )
+            jobs_r.raise_for_status()
+            jobs = jobs_r.json().get("jobs", [])
+            failed_job = next((j for j in jobs if j.get("conclusion") == "failure"), None)
+            if not failed_job:
+                return ""
+            log_r = await client.get(
+                f"https://api.github.com/repos/{repo}/actions/jobs/{failed_job['id']}/logs",
+                headers=headers,
+            )
+            log_r.raise_for_status()
+            text = log_r.text
+            return text[-2000:] if len(text) > 2000 else text
+    except Exception as exc:
+        logger.warning("Could not fetch run logs for %s/%s: %s", repo, run_id, exc)
+        return ""
+
+
 async def _run_pipeline(event: FailureEvent) -> None:
     from core.orchestrator.pipeline import pipeline
 
@@ -77,7 +110,23 @@ async def github_webhook(
 
     repo = payload.get("repository", {}).get("full_name", "")
     sha = run.get("head_sha", "")
-    changed_files = await _get_changed_files(repo, sha)
+    run_id_str = str(run.get("id", ""))
+    changed_files, fetched_log = await asyncio.gather(
+        _get_changed_files(repo, sha),
+        _get_run_log_tail(repo, run_id_str),
+    )
+    # Build a meaningful log tail even without a token: include commit/run metadata so
+    # each run produces a distinct embedding rather than all deduping as EXACT matches.
+    changed_files_str = ", ".join(changed_files) if changed_files else "unknown"
+    log_tail = fetched_log or (
+        f"Workflow: {run.get('name', 'unknown')}\n"
+        f"Repository: {repo}\n"
+        f"Head SHA: {sha}\n"
+        f"Run ID: {run_id_str}\n"
+        f"Changed files: {changed_files_str}\n"
+        f"Conclusion: failure\n"
+        f"The CI run failed with conclusion=failure."
+    )
 
     ts_raw = (
         run.get("updated_at") or run.get("created_at") or datetime.now(timezone.utc).isoformat()
@@ -87,12 +136,12 @@ async def github_webhook(
     event = FailureEvent(
         id=str(uuid.uuid4()),
         repo=repo,
-        run_id=str(run.get("id", "")),
+        run_id=run_id_str,
         workflow=run.get("name", ""),
         job=run.get("name", ""),
         step="unknown",
         exit_code=1,
-        log_tail="",
+        log_tail=log_tail,
         changed_files=changed_files,
         timestamp=timestamp,
     )

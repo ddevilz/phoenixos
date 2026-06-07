@@ -59,13 +59,15 @@ async def _write_node(state: PhoenixState) -> dict[str, Any]:
         await write(signature, result, session)
         await recompute_fragility(session)
     from core.api.ws import broadcast_event
+    from core.embeddings.dedup import DedupKind
 
+    broadcast_node_id = result.matched_id if result.kind == DedupKind.EXACT else signature.id
     await broadcast_event(
         "graph_updated",
         state["event"].run_id,
         {
             "node_type": "FailureSignature",
-            "node_id": signature.id,
+            "node_id": broadcast_node_id,
         },
     )
     logger.info(

@@ -35,7 +35,9 @@ export default function NodeInspector({
   return (
     <div className="bg-panel border border-border rounded-lg text-sm">
       <div className="flex justify-between items-center p-3 border-b border-border">
-        <p className="font-mono text-xs text-muted truncate">{node.affected_component}</p>
+        <p className="font-mono text-xs text-muted truncate">
+          {node.affected_component !== "unknown" ? node.affected_component : node.summary?.slice(0, 80) || "unknown"}
+        </p>
         <button onClick={onClose} aria-label="Close inspector" className="text-muted hover:text-gray-300 text-lg leading-none">
           ×
         </button>

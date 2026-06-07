@@ -63,29 +63,34 @@ export default function FailureGraph() {
     load(false).catch((e: Error) => setError(e.message));
   }, [load]);
 
-  // FIX 4: track reconnect timer to avoid orphan socket after unmount
+  // WS subscription: use a ref-counted singleton so React StrictMode double-mount
+  // doesn't open two sockets. The module-level counter ensures only the last live
+  // instance owns the connection.
+  const wsIdRef = useRef(0);
   useEffect(() => {
+    const myId = ++wsIdRef.current;
     let ws: WebSocket | null = null;
-    let stop = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     const connect = () => {
+      if (wsIdRef.current !== myId) return; // superseded by a newer mount
       ws = new WebSocket(wsUrl("/ws/events"));
-      ws.onopen = () => setLive(true);
+      ws.onopen = () => { if (wsIdRef.current === myId) setLive(true); };
       ws.onmessage = (e) => {
+        if (wsIdRef.current !== myId) return;
         try {
           const ev = JSON.parse(e.data as string) as PhoenixEvent;
           if (ev.type === "graph_updated") load(true).catch(() => {});
         } catch { /* skip */ }
       };
       ws.onclose = () => {
+        if (wsIdRef.current !== myId) return;
         setLive(false);
-        if (!stop) reconnectTimer = setTimeout(connect, 2000);
+        reconnectTimer = setTimeout(connect, 3000);
       };
-      ws.onerror = () => setLive(false);
+      ws.onerror = () => { if (wsIdRef.current === myId) setLive(false); };
     };
     connect();
     return () => {
-      stop = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       ws?.close();
     };
@@ -121,10 +126,14 @@ export default function FailureGraph() {
               backgroundColor="#0f1117"
               width={width}
               height={400}
-              nodeRelSize={4}
-              nodeVal={(n) => Math.max(1, (n as GraphNode).occurrence_count)}
+              nodeRelSize={5}
+              nodeVal={(n) => Math.max(2, (n as GraphNode).occurrence_count)}
               nodeColor={(n) => scoreColor((n as GraphNode).score)}
-              nodeLabel={(n) => `${(n as GraphNode).affected_component} — fragility ${(n as GraphNode).score.toFixed(2)}`}
+              nodeLabel={(n) => {
+                const node = n as GraphNode;
+                const label = node.affected_component !== "unknown" ? node.affected_component : node.summary?.slice(0, 60);
+                return `${label} — fragility ${node.score.toFixed(2)}`;
+              }}
               linkColor={() => "#2a2d3e"}
               linkWidth={(l) => 0.5 + ((l as { similarity?: number }).similarity ?? 0) * 2}
               onNodeClick={(n) => setSelected(n as GraphNode)}

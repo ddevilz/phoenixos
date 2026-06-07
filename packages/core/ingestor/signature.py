@@ -86,11 +86,15 @@ async def extract(event: FailureEvent) -> FailureSignature | None:
         logger.error("Signature extraction failed for run %s: %s", event.run_id, exc)
         return None
 
+    component = llm.affected_component
+    if component in ("unknown", "", None) and event.changed_files:
+        component = event.changed_files[0]
+
     return FailureSignature(
         id=str(uuid.uuid4()),
         summary=llm.summary,
         category=llm.category,
-        affected_component=llm.affected_component,
+        affected_component=component,
         embedding=[],
         first_seen=event.timestamp,
         last_seen=event.timestamp,
