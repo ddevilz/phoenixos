@@ -3,7 +3,10 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+import aiosqlite
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+
+from core.db.sqlite import get_db
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -49,6 +52,43 @@ async def websocket_events(websocket: WebSocket) -> None:
     except Exception as exc:
         logger.error("WebSocket error: %s", exc)
         await manager.disconnect(websocket)
+
+
+@router.get("/events/recent")
+async def recent_events(
+    limit: int = 50,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Return the most recent pipeline_run events from SQLite for Live Feed history."""
+    db.row_factory = aiosqlite.Row
+    cur = await db.execute(
+        """
+        SELECT pr.id AS run_id, pr.repo, pr.workflow, pr.status, pr.triggered_at,
+               fe.id AS event_id, fe.job, fe.step
+        FROM pipeline_runs pr
+        LEFT JOIN failure_events fe ON fe.run_id = pr.id
+        ORDER BY pr.triggered_at DESC
+        LIMIT ?
+        """,
+        (limit,),
+    )
+    rows = await cur.fetchall()
+    events = []
+    for r in rows:
+        events.append(
+            {
+                "type": "pipeline_started" if r["status"] == "running" else "signature_extracted",
+                "timestamp": r["triggered_at"],
+                "run_id": r["run_id"],
+                "payload": {
+                    "repo": r["repo"],
+                    "workflow": r["workflow"],
+                    "status": r["status"],
+                    "job": r["job"],
+                },
+            }
+        )
+    return events
 
 
 async def broadcast_event(

@@ -8,9 +8,9 @@ import TrustLedgerPage from "./pages/mocks/TrustLedger";
 const NAV = [
   { to: "/", label: "Memory Graph" },
   { to: "/evals", label: "Evals" },
-  { to: "/mocks/intent-compiler", label: "Intent Compiler" },
-  { to: "/mocks/behavior-twin", label: "Behavior Twin" },
-  { to: "/mocks/trust-ledger", label: "Trust Ledger" },
+  { to: "/intent-compiler", label: "Intent Compiler" },
+  { to: "/behavior-twin", label: "Behavior Twin" },
+  { to: "/trust-ledger", label: "Trust Ledger" },
 ];
 
 function NavLink({ to, label }: { to: string; label: string }) {
@@ -37,13 +37,13 @@ export default function App() {
           {NAV.map((n) => <NavLink key={n.to} {...n} />)}
         </nav>
       </header>
-      <main className="p-6">
+      <main className="px-8 py-6">
         <Routes>
           <Route path="/" element={<MemoryGraphPage />} />
           <Route path="/evals" element={<EvalsPage />} />
-          <Route path="/mocks/intent-compiler" element={<IntentCompilerPage />} />
-          <Route path="/mocks/behavior-twin" element={<BehaviorTwinPage />} />
-          <Route path="/mocks/trust-ledger" element={<TrustLedgerPage />} />
+          <Route path="/intent-compiler" element={<IntentCompilerPage />} />
+          <Route path="/behavior-twin" element={<BehaviorTwinPage />} />
+          <Route path="/trust-ledger" element={<TrustLedgerPage />} />
         </Routes>
       </main>
     </div>

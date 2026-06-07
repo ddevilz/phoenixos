@@ -9,34 +9,67 @@ const VERDICT_STYLES = {
   block: "bg-block/10 text-block border-block/30",
 };
 
-function ScoreBar({ score }: { score: number }) {
-  const pct = Math.round(score * 100);
-  const bar = score >= 0.7 ? "bg-pass" : score >= 0.4 ? "bg-warn" : "bg-block";
-  return (
-    <div className="flex items-center gap-2 mt-1">
-      <div className="flex-1 h-1.5 bg-border rounded-full overflow-hidden">
-        <div className={`h-full ${bar} rounded-full`} style={{ width: `${pct}%` }} />
-      </div>
-      <span className="text-xs text-muted w-8 text-right">{pct}%</span>
-    </div>
-  );
-}
+const SCORE_BAR = {
+  pass: "bg-pass",
+  warn: "bg-warn",
+  block: "bg-block",
+};
 
 function JudgeCard({ r }: { r: JudgeResult }) {
+  const [expanded, setExpanded] = useState(false);
+  const verdict = r.verdict as keyof typeof VERDICT_STYLES;
+  const pct = Math.round(r.score * 100);
+  const cleanFlags = r.flags.filter((f) => f && f !== "judge_timeout");
+
   return (
-    <div className="bg-panel border border-border rounded-lg p-4">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-sm font-medium capitalize">{r.judge}</span>
-        <span className={`text-xs px-2 py-0.5 rounded border ${VERDICT_STYLES[r.verdict]}`}>
-          {r.verdict}
-        </span>
+    <div className="bg-panel border border-border rounded-lg p-4 space-y-3">
+      {/* header row */}
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-semibold capitalize tracking-wide">{r.judge}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-lg font-bold tabular-nums" style={{ color: pct >= 70 ? "#4ade80" : pct >= 40 ? "#facc15" : "#f87171" }}>
+            {pct}
+          </span>
+          <span className={`text-xs px-2 py-0.5 rounded border ${VERDICT_STYLES[verdict] ?? "text-muted border-border"}`}>
+            {r.verdict}
+          </span>
+        </div>
       </div>
-      <ScoreBar score={r.score} />
-      <p className="text-xs text-muted mt-3 leading-relaxed">{r.reasoning}</p>
-      {r.flags.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {r.flags.map((f) => (
-            <span key={f} className="text-xs bg-border px-2 py-0.5 rounded font-mono">{f}</span>
+
+      {/* score bar */}
+      <div className="h-1.5 bg-border rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all ${SCORE_BAR[verdict] ?? "bg-muted"}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+
+      {/* reasoning */}
+      {r.reasoning && (
+        <div className="text-xs text-gray-400 leading-relaxed">
+          <p className={expanded ? "" : "line-clamp-3"}>{r.reasoning}</p>
+          {r.reasoning.length > 160 && (
+            <button
+              onClick={() => setExpanded((e) => !e)}
+              className="text-accent text-xs mt-1 hover:underline"
+            >
+              {expanded ? "show less" : "show more"}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* flags */}
+      {cleanFlags.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 pt-1">
+          {cleanFlags.map((f) => (
+            <span
+              key={f}
+              title={f}
+              className="text-xs bg-surface border border-border px-2 py-0.5 rounded font-mono max-w-full truncate"
+            >
+              {f.length > 48 ? f.slice(0, 48) + "…" : f}
+            </span>
           ))}
         </div>
       )}
@@ -55,6 +88,7 @@ export default function JudgeScorecard() {
     if (!prUrl && !diff) return;
     setLoading(true);
     setError(null);
+    setResult(null);
     try {
       const r = await apiFetch<AggregateScore>("/api/evals/run", {
         method: "POST",
@@ -69,8 +103,12 @@ export default function JudgeScorecard() {
     }
   };
 
+  const verdict = result?.verdict as keyof typeof VERDICT_STYLES | undefined;
+  const trustPct = result ? Math.round(result.trust_score * 100) : null;
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
+      {/* input form */}
       <div className="bg-panel border border-border rounded-lg p-4 space-y-3">
         <input
           type="text"
@@ -97,26 +135,46 @@ export default function JudgeScorecard() {
         {error && <p className="text-block text-xs">{error}</p>}
       </div>
 
+      {/* results */}
       {result && (
-        <div className="space-y-3">
-          <div className={`flex items-center justify-between p-4 rounded-lg border ${VERDICT_STYLES[result.verdict]}`}>
+        <div className="space-y-4">
+          {/* trust score summary */}
+          <div className={`flex items-center gap-6 p-5 rounded-lg border ${VERDICT_STYLES[verdict ?? "warn"]}`}>
             <div>
-              <p className="text-xs text-muted mb-0.5">Trust Score</p>
-              <p className="text-3xl font-bold">{Math.round(result.trust_score * 100)}</p>
+              <p className="text-xs uppercase tracking-wider opacity-70 mb-0.5">Trust Score</p>
+              <p className="text-5xl font-bold tabular-nums">{trustPct}</p>
             </div>
-            <span className="text-xl font-semibold uppercase tracking-wide">{result.verdict}</span>
+            <div className="flex-1">
+              <div className="h-2 bg-black/20 rounded-full overflow-hidden mb-2">
+                <div
+                  className={`h-full rounded-full ${SCORE_BAR[verdict ?? "warn"]}`}
+                  style={{ width: `${trustPct}%` }}
+                />
+              </div>
+              <p className="text-xs opacity-70">
+                behavior×0.4 + security×0.4 + regression×0.2
+              </p>
+            </div>
+            <span className="text-2xl font-bold uppercase tracking-widest">{result.verdict}</span>
           </div>
+
+          {/* judge cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {result.judge_results.map((r) => <JudgeCard key={r.judge} r={r} />)}
           </div>
+
+          {/* graph links */}
           {(() => {
             const comps = [...new Set(result.judge_results.flatMap((r) => extractComponents(r.reasoning)))];
             return comps.length > 0 ? (
-              <div className="flex flex-wrap items-center gap-2 pt-1">
+              <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-border">
                 <span className="text-xs text-muted">Touches graph nodes:</span>
                 {comps.map((c) => (
-                  <Link key={c} to={`/#node=${encodeURIComponent(c)}`}
-                    className="text-xs font-mono bg-border hover:bg-accent/30 px-2 py-0.5 rounded transition-colors">
+                  <Link
+                    key={c}
+                    to={`/#node=${encodeURIComponent(c)}`}
+                    className="text-xs font-mono bg-border hover:bg-accent/30 px-2 py-0.5 rounded transition-colors"
+                  >
                     {c}
                   </Link>
                 ))}

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { PhoenixEvent } from "@/lib/api";
+import { apiFetch, type PhoenixEvent } from "@/lib/api";
 
 const TYPE_COLORS: Record<string, string> = {
   pipeline_started: "text-accent",
@@ -25,6 +25,12 @@ export default function LiveFeed() {
   const [events, setEvents] = useState<PhoenixEvent[]>([]);
   const [status, setStatus] = useState<"connecting" | "live" | "error">("connecting");
   const wsRef = useRef<WebSocket | null>(null);
+
+  useEffect(() => {
+    apiFetch<PhoenixEvent[]>("/events/recent").then((hist) => {
+      if (hist.length) setEvents(hist.slice(0, 100));
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/events`;

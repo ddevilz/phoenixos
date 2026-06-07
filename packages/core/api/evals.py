@@ -19,6 +19,34 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/evals")
 
 
+@router.get("/history")
+async def eval_history(limit: int = 20):
+    """Return recent EvalResult nodes from Neo4j, newest first."""
+    try:
+        async with neo4j_session() as session:
+            result = await session.run(
+                """
+                MATCH (e:EvalResult)
+                OPTIONAL MATCH (e)-[:FLAGGED]->(v:ContractViolation)
+                RETURN e.id AS id,
+                       e.pr_url AS pr_url,
+                       e.trust_score AS trust_score,
+                       e.verdict AS verdict,
+                       e.evaluated_at AS evaluated_at,
+                       e.changed_files AS changed_files,
+                       collect(v.description) AS flags
+                ORDER BY e.evaluated_at DESC
+                LIMIT $limit
+                """,
+                limit=limit,
+            )
+            rows = await result.data()
+        return rows
+    except Exception as exc:
+        logger.error("Eval history query failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Graph database unavailable")
+
+
 class EvalRequest(BaseModel):
     pr_url: str | None = None
     diff: str | None = None
