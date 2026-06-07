@@ -35,7 +35,7 @@ export function neighborsOf(id: string, links: GraphLink[]): string[] {
 }
 
 export function scoreColor(score: number): string {
-  if (score >= 0.55) return "#ef4444";
+  if (score >= 0.75) return "#ef4444";
   if (score >= 0.35) return "#f59e0b";
   return "#22c55e";
 }
