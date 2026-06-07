@@ -18,6 +18,9 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
+import json
 import os
 import random
 import uuid
@@ -27,6 +30,7 @@ import httpx
 
 API = os.environ.get("PHOENIX_API_URL", "http://localhost:8000")
 GH_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+WEBHOOK_SECRET = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
 GH_HEADERS = {
     "Authorization": f"Bearer {GH_TOKEN}",
     "Accept": "application/vnd.github+json",
@@ -330,7 +334,17 @@ FIX_CHAINS = [
 
 
 async def _post(client: httpx.AsyncClient, path: str, body: dict) -> dict:
-    r = await client.post(f"{API}{path}", json=body, timeout=60.0)
+    raw = json.dumps(body, separators=(",", ":")).encode()
+    headers = {}
+    if WEBHOOK_SECRET:
+        sig = "sha256=" + hmac.new(WEBHOOK_SECRET.encode(), raw, hashlib.sha256).hexdigest()
+        headers["X-Hub-Signature-256"] = sig
+    r = await client.post(
+        f"{API}{path}",
+        content=raw,
+        headers={"Content-Type": "application/json", **headers},
+        timeout=60.0,
+    )
     r.raise_for_status()
     return r.json()
 
