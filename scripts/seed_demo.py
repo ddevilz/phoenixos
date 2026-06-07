@@ -27,6 +27,9 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import httpx
+from dotenv import load_dotenv
+
+load_dotenv()
 
 API = os.environ.get("PHOENIX_API_URL", "http://localhost:8000")
 GH_TOKEN = os.environ.get("GITHUB_TOKEN", "")
