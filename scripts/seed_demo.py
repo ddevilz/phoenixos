@@ -461,6 +461,8 @@ async def main() -> None:
                             "created_at": ts,
                             "updated_at": ts,
                             "html_url": f"https://github.com/{failure['repo']}/actions/runs/{run_id}",
+                            "log_tail": failure.get("log_tail", ""),
+                            "changed_files": [failure["affected_component"]],
                         },
                         "repository": {"full_name": failure["repo"]},
                     },

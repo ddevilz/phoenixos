@@ -111,12 +111,16 @@ async def github_webhook(
     repo = payload.get("repository", {}).get("full_name", "")
     sha = run.get("head_sha", "")
     run_id_str = str(run.get("id", ""))
-    changed_files, fetched_log = await asyncio.gather(
-        _get_changed_files(repo, sha),
-        _get_run_log_tail(repo, run_id_str),
-    )
-    # Build a meaningful log tail even without a token: include commit/run metadata so
-    # each run produces a distinct embedding rather than all deduping as EXACT matches.
+    # Seed payloads may embed log_tail directly; use it if present to avoid GitHub fetch.
+    payload_log = run.get("log_tail", "")
+    if payload_log:
+        changed_files = run.get("changed_files", [])
+        fetched_log = payload_log
+    else:
+        changed_files, fetched_log = await asyncio.gather(
+            _get_changed_files(repo, sha),
+            _get_run_log_tail(repo, run_id_str),
+        )
     changed_files_str = ", ".join(changed_files) if changed_files else "unknown"
     log_tail = fetched_log or (
         f"Workflow: {run.get('name', 'unknown')}\n"
